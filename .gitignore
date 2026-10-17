@@ -1,1 +1,5 @@
-.env.venv/
+# Environment variables and secrets
+.env
+
+# Python virtual environments
+.venv/
