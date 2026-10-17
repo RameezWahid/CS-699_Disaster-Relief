@@ -1,0 +1,75 @@
+# Share the backend build and runtime settings. Do not duplicate them across services.
+x-backend: &backend
+  build: {context: ., dockerfile: backend/Dockerfile}
+  image: relief-backend
+  env_file: .env
+  environment:
+    # Runtime services use the restricted database role, not the database owner.
+    DATABASE_URL: postgresql://relief_app:${APP_DB_PASSWORD}@db:5432/relief
+  volumes:
+    # Keep input data and generated files outside the container.
+    - ./data:/app/data
+
+services:
+  db:
+    # Use PostgreSQL with PostGIS and pgRouting for spatial queries and routing.
+    image: pgrouting/pgrouting:16-3.5-4.0.1
+    restart: unless-stopped
+    environment:
+      # Create the database and its initial owner on first startup.
+      POSTGRES_USER: relief
+      POSTGRES_PASSWORD: relief
+      POSTGRES_DB: relief
+    # Expose PostgreSQL to the host for local tools and debugging.
+    ports: ["5432:5432"]
+    # Keep database files when the container is replaced.
+    volumes: [pgdata:/var/lib/postgresql/data]
+    # Do not start setup until PostgreSQL accepts connections.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U relief"]
+      interval: 2s
+      retries: 30
+
+  setup:
+    # Run database setup once before starting the application services.
+    <<: *backend
+    command: sh -c "python -m scripts.migrate && python -m scripts.load_base"
+    environment:
+      # Setup needs the database owner to create schema objects and load base data.
+      DATABASE_URL: postgresql://relief:relief@db:5432/relief
+    depends_on: {db: {condition: service_healthy}}
+
+  api:
+    # Serve HTTP requests only after the database setup succeeds.
+    <<: *backend
+    command: uvicorn scripts.api:app --host 0.0.0.0 --port 8000
+    ports: ["8000:8000"]
+    depends_on: {setup: {condition: service_completed_successfully}}
+    restart: unless-stopped
+
+  worker:
+    # Process incoming reports in the background.
+    <<: *backend
+    command: python -m scripts.worker
+    depends_on: {setup: {condition: service_completed_successfully}}
+    restart: unless-stopped
+
+  bot:
+    # Accept reports from Telegram. The worker handles processing separately.
+    <<: *backend
+    command: python -m scripts.telegram_bot
+    depends_on: {setup: {condition: service_completed_successfully}}
+    # Restart if the bot exits. An empty token makes it exit without doing useful work.
+    restart: unless-stopped
+
+  web:
+    # Build and serve the frontend as its own container.
+    build: {context: ., dockerfile: frontend/Dockerfile}
+    ports: ["8080:80"]
+    # Start the API first. This does not guarantee that the API is ready to serve requests.
+    depends_on: [api]
+    restart: unless-stopped
+
+# Keep PostgreSQL data independent of the database container's lifecycle.
+volumes:
+  pgdata:
