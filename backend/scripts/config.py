@@ -31,3 +31,4 @@ JWT_SECRET = os.environ.get("JWT_SECRET", "dev-only-jwt-secret")
 
 # Authentication tokens expire after 60 minutes.
 TOKEN_TTL_MIN = 60
+H3_RESOLUTION = 8  # must match the resolution-8 cells in 001_base.sql
