@@ -6,13 +6,11 @@ import logging
 import h3
 import psycopg
 from scripts.config import DATA_DIR, DATABASE_URL, H3_RESOLUTION
+# Use the geocoder's normalizer, or the same place gets different keys.
+from scripts.text import normalize_place
 
 WARDS_FILE = DATA_DIR / "base/BMC_Wards.geojson"
 SPOTS_FILE = DATA_DIR / "gazetteer/chronic_spots.csv"
-
-def normalize_place(name: str) -> str:
-    # Keep this consistent with the geocoder, or the same place gets different keys.
-    return " ".join(name.lower().split())
 
 def load_wards(conn: psycopg.Connection) -> list[dict]:
     # Read the GeoJSON features. Each feature becomes one ward.
