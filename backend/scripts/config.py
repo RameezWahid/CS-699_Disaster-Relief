@@ -23,7 +23,7 @@ SENDER_HASH_SECRET = os.environ.get(
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 
 # Password for the restricted application database role.
-# The migration script creates or configures this role when needed.
+# The migration script sets this password when the relief_app role exists.
 APP_DB_PASSWORD = os.environ.get("APP_DB_PASSWORD", "")
 
 # JWT signing key. Do not use the development default in production.

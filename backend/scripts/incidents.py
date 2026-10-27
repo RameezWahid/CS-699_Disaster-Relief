@@ -4,12 +4,12 @@ import json
 
 from psycopg import Connection
 
+# Unknown classifier labels fall back to "info".
+from scripts.triage import CATEGORY_GROUP
+
 JOIN_RADIUS_M = 150
 ACTIVE_WINDOW_MIN = 60
 INCIDENT_LOCK = 4202  # Serialize assignment. Without this, workers can create duplicate incidents.
-
-# Temporary mapping. Unknown classifier labels fall back to "info".
-CATEGORY_GROUP = {"rescue": "rescue", "medical": "medical", "supply": "supply", "road": "road"}
 
 
 def assign_incident(conn: Connection, report_id: int) -> tuple[int, bool]:
