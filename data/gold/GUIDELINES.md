@@ -15,6 +15,12 @@ and without looking at `backend/scripts/extract.py` or `data/gazetteer/chronic_s
 | `gold_template.csv` | Header for the main set. Copy to `gold_draft.csv` and fill in |
 | `urgency_template.csv` | Header for the blind urgency ratings (metric 6) |
 
+Check your file at any time:
+
+```sh
+cd backend && python -m scripts.validate_gold ../data/gold/gold_draft.csv
+```
+
 ## Columns (one row per message)
 
 | Column | Required | Allowed values | Meaning |
