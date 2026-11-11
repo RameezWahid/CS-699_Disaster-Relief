@@ -8,6 +8,9 @@ from pathlib import Path
 REPO_DIR = Path(__file__).resolve().parents[2]
 DATA_DIR = REPO_DIR / "data"
 
+# Photos attached to web reports. Personal data: kept out of git.
+PHOTOS_DIR = DATA_DIR / "photos"
+
 # Use the environment value when set; otherwise use local development defaults.
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
