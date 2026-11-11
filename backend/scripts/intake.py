@@ -9,6 +9,10 @@ from psycopg import AsyncConnection
 
 from scripts.config import SENDER_HASH_SECRET
 
+# Each sender may queue at most this many messages per window.
+RATE_LIMIT_COUNT = 10
+RATE_LIMIT_WINDOW_MIN = 10
+
 
 def sender_hash(source: str, raw_sender_id: str) -> str:
     # Include the source so identical IDs from different platforms stay separate.
@@ -46,3 +50,15 @@ async def enqueue(
     # A duplicate returns no row, so return None.
     row = await cursor.fetchone()
     return row[0] if row else None
+
+
+async def rate_limited(conn: AsyncConnection, sender: str) -> bool:
+    # Count only queued messages. Rejected duplicates never reach the inbox.
+    # Concurrent requests from one sender can overshoot the limit slightly; that is acceptable.
+    cursor = await conn.execute(
+        "SELECT count(*) FROM inbox "
+        "WHERE sender_hash = %s AND received_at > now() - make_interval(mins => %s)",
+        (sender, RATE_LIMIT_WINDOW_MIN),
+    )
+    (count,) = await cursor.fetchone()
+    return count >= RATE_LIMIT_COUNT
