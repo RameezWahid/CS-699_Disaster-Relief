@@ -4,6 +4,11 @@ import psycopg
 from psycopg import Connection
 
 from scripts.config import DATABASE_URL
+from scripts.extract import extract
+from scripts.incidents import attach_report
+from scripts.matching import upsert_needs
+from scripts.text import normalize, simhash, tag_language, tokens
+from scripts.triage import CATEGORY_SEVERITY, urgency
 
 # Stop retrying after three failed attempts.
 MAX_ATTEMPTS = 3
@@ -11,44 +16,123 @@ MAX_ATTEMPTS = 3
 # Poll periodically in case a notification is missed.
 IDLE_POLL_S = 5
 
+# A report within this many SimHash bits of a recent report is a near copy of it.
+REPEAT_MAX_BITS = 3
+REPEAT_WINDOW_MIN = 60
+
+# A category picked by the citizen counts for less than a rule match.
+HINT_CATEGORY_P = 0.5
+
 log = logging.getLogger("worker")
 
+
 def analyse(payload: dict) -> dict:
-    # Placeholder for the NLP pipeline: normalize, extract, classify, geocode, and triage.
-    return {"text": payload.get("text", ""), "lang": "en", "category": "unknown", "urgency": 1}
+    """Run the text pipeline on one inbox payload. No database access, so it is unit-testable."""
+    text = payload.get("text") or ""
+    norm = normalize(text)
+    fields = extract(norm)
+    category, category_p = fields["category"]["label"], fields["category"]["p"]
+
+    # Rules found nothing specific. Use the category the citizen picked, if any.
+    # A hard rule (trapped, drowning, ...) already forced rescue, so it is never overridden here.
+    hint = payload.get("category_hint")
+    if category == "info_noise" and hint in CATEGORY_SEVERITY:
+        category, category_p = hint, HINT_CATEGORY_P
+
+    headcount = fields["headcount"]["value"] if fields["headcount"] else None
+    # Waiting time is zero at intake. Incidents account for it as they age.
+    triage = urgency(category, headcount, bool(fields["vulnerability"]), 0, fields["override"])
+
+    # Only GPS locations for now. The gazetteer geocoder fills in place names later.
+    lat, lon = payload.get("lat"), payload.get("lon")
+    has_gps = lat is not None and lon is not None
+    location = {
+        "name": None,
+        "source": "gps" if has_gps else None,
+        "confidence": 1.0 if has_gps else 0.0,
+        "uncertainty_m": payload.get("accuracy_m") if has_gps else None,
+    }
+
+    return {
+        "text": text,
+        "lang": tag_language(norm),
+        # Empty or punctuation-only text has no features, so it must not match other reports.
+        "simhash": simhash(norm) if tokens(norm) else None,
+        "category": category,
+        "category_p": category_p,
+        "headcount": headcount,
+        "needs": fields["needs"],
+        "vulnerability": fields["vulnerability"],
+        "override": fields["override"],
+        "urgency": triage,
+        "location": location,
+        "lat": lat if has_gps else None,
+        "lon": lon if has_gps else None,
+    }
+
+
+def find_repeat(conn: Connection, received_at, sh: int | None) -> int | None:
+    # Point at the closest recent near copy. Repeats still join incidents as extra evidence.
+    if sh is None:
+        return None
+    row = conn.execute(
+        """
+        SELECT id FROM reports
+         WHERE received_at BETWEEN %(at)s - make_interval(mins => %(window)s) AND %(at)s
+           AND bit_count((simhash # %(h)s)::bit(64)) <= %(bits)s
+         ORDER BY bit_count((simhash # %(h)s)::bit(64)), received_at
+         LIMIT 1
+        """,
+        {"at": received_at, "window": REPEAT_WINDOW_MIN, "h": sh, "bits": REPEAT_MAX_BITS},
+    ).fetchone()
+    return row[0] if row else None
+
 
 def process(conn: Connection, inbox_id, source, sender, received_at, payload) -> None:
-    # Extract the report fields. Replace this stub when the NLP pipeline is ready.
     r = analyse(payload)
-    lat, lon = payload.get("lat"), payload.get("lon")
+    loc = r["location"]
 
     # Create the report only if this inbox row has not produced one already.
-    # Resolve the ward from the report's coordinates.
+    # Resolve the ward from the report's coordinates. A NULL point gives a NULL ward.
     row = conn.execute(
         """
         INSERT INTO reports (inbox_id, received_at, source, sender_hash, text, lang, simhash,
-                             has_gps, has_photo, category, category_p, needs, vulnerability,
-                             geom, ward, urgency_level, needs_review, extraction)
-        SELECT %(id)s, %(at)s, %(source)s, %(sender)s, %(text)s, %(lang)s, 0,
-               %(gps)s, %(photo)s, %(category)s, 0, '{}', '{}', pt,
+                             repeat_of, has_gps, has_photo, category, category_p, headcount,
+                             needs, vulnerability, geom, ward, loc_uncertainty_m, loc_confidence,
+                             loc_source, urgency_level, needs_review, extraction)
+        SELECT %(id)s, %(at)s, %(source)s, %(sender)s, %(text)s, %(lang)s, %(simhash)s,
+               %(repeat_of)s, %(gps)s, %(photo)s, %(category)s, %(category_p)s, %(headcount)s,
+               %(needs)s, %(vulnerability)s, pt,
                (SELECT code FROM wards WHERE ST_Contains(geom, pt) LIMIT 1),
-               %(urgency)s, true, %(extraction)s::jsonb
+               %(uncertainty)s, %(confidence)s, %(loc_source)s,
+               %(urgency)s, %(review)s, %(extraction)s::jsonb
           FROM (SELECT ST_SetSRID(ST_MakePoint(%(lon)s::float8, %(lat)s::float8), 4326) AS pt) p
         ON CONFLICT (inbox_id) DO NOTHING
         RETURNING id, ward
         """,
         {"id": inbox_id, "at": received_at, "source": source, "sender": sender,
-         "text": r["text"], "lang": r["lang"], "gps": lat is not None,
-         "photo": bool(payload.get("photo")), "category": r["category"],
-         "urgency": r["urgency"], "lat": lat, "lon": lon, "extraction": json.dumps(r)},
+         "text": r["text"], "lang": r["lang"], "simhash": r["simhash"] or 0,
+         "repeat_of": find_repeat(conn, received_at, r["simhash"]),
+         "gps": r["lat"] is not None, "photo": bool(payload.get("photo")),
+         "category": r["category"], "category_p": r["category_p"], "headcount": r["headcount"],
+         "needs": r["needs"], "vulnerability": r["vulnerability"],
+         "lat": r["lat"], "lon": r["lon"], "uncertainty": loc["uncertainty_m"],
+         "confidence": loc["confidence"], "loc_source": loc["source"],
+         "urgency": r["urgency"]["level"],
+         # Coordinators check reports with no location or no recognisable category.
+         "review": r["lat"] is None or r["category"] == "info_noise",
+         "extraction": json.dumps(r, ensure_ascii=False)},
     ).fetchone()
 
-    # Do not log the same report twice if an earlier attempt already inserted it.
+    # Do not log or attach the same report twice if an earlier attempt already inserted it.
     if row:
+        report_id, ward = row
         conn.execute(
             "INSERT INTO event_log (kind, ward, payload) VALUES ('report.created', %s, %s)",
-            (row[1], json.dumps({"report_id": row[0]})),
+            (ward, json.dumps({"report_id": report_id})),
         )
+        incident_id = attach_report(conn, report_id)
+        upsert_needs(conn, incident_id)
 
 def claim_and_process(conn: Connection) -> bool:
     # Claim one row. Return False when there is no work to do.
