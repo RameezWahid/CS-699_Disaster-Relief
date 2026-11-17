@@ -3,3 +3,8 @@
 
 # Python virtual environments
 .venv/
+# Python bytecode
+__pycache__/
+
+# Citizen report photos (personal data)
+data/photos/
