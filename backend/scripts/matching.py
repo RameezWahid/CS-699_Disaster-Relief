@@ -1,6 +1,5 @@
 import json
 import math
-from datetime import datetime
 
 from psycopg import Connection, Rollback
 
