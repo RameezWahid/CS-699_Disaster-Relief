@@ -70,3 +70,12 @@ def test_report_becomes_incident_with_needs():
             "SELECT kind, qty_total FROM needs WHERE incident_id = %s", (incident_id,)
         ).fetchall()
         assert ("boat", 1) in needs
+
+        # Hindmata is a chronic flood spot; urgency 5 fast-tracks past verification.
+        signals, fast_track, urgency = conn.execute(
+            "SELECT credibility_signals, fast_track, urgency FROM incidents WHERE id = %s",
+            (incident_id,),
+        ).fetchone()
+        assert signals["chronic_spot"] is True
+        assert fast_track is True
+        assert set(urgency) >= {"S", "factors", "level", "override"}

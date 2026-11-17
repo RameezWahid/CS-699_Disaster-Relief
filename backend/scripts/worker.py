@@ -17,7 +17,9 @@ MAX_ATTEMPTS = 3
 IDLE_POLL_S = 5
 
 # A report within this many SimHash bits of a recent report is a near copy of it.
-REPEAT_MAX_BITS = 3
+# Reports are short, so one changed word ("mein" -> "me") moves about 5 bits, while
+# unrelated reports sit around 25 bits apart. Tune on the gold set.
+REPEAT_MAX_BITS = 6
 REPEAT_WINDOW_MIN = 60
 
 # A category picked by the citizen counts for less than a rule match.
@@ -43,7 +45,12 @@ def analyse(payload: dict) -> dict:
     # Waiting time is zero at intake. Incidents account for it as they age.
     triage = urgency(category, headcount, bool(fields["vulnerability"]), 0, fields["override"])
 
-    # Only GPS locations for now. The gazetteer geocoder fills in place names later.
+    # Only GPS locations for now.
+    # TODO(geocoder): when there is no GPS, find a place named in the text. Match 1-3 word
+    # spans against place_names (pg_trgm prefilter, RapidFuzz ranking), take the place's point
+    # and uncertainty_m, and flag the match as ambiguous when a different place scores as well.
+    # Ambiguous matches go to review. Start with the 46 chronic spots; add OSM roads, stations,
+    # and localities to the gazetteer later.
     lat, lon = payload.get("lat"), payload.get("lon")
     has_gps = lat is not None and lon is not None
     location = {
@@ -180,6 +187,12 @@ def run() -> None:
         # PostgreSQL sends notifications when new inbox rows arrive.
         listener.execute("LISTEN inbox")
 
+        # TODO(periodic): every ~30 s between messages, run the work that does not depend on a
+        # new report: incidents.refresh_active() (urgency grows with waiting time), then
+        # matching.expire_proposals() and matching.propose(). Until then nothing creates
+        # proposals or returns stock from expired ones.
+        # TODO(later): DBSCAN merging of incidents that drift together, rainfall from
+        # Open-Meteo and official alerts as credibility signals.
         while True:
             # Drain available work before waiting for another notification.
             if not claim_and_process(conn):

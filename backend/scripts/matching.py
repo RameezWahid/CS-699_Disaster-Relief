@@ -188,6 +188,8 @@ def propose(conn: Connection) -> list[dict]:
         """
         SELECT n.id, n.qty_open, i.id, i.ward FROM needs n JOIN incidents i ON i.id = n.incident_id
          WHERE n.qty_open > 0 AND i.status IN ('open', 'verified') AND i.geom IS NOT NULL
+           -- Unverified low-credibility incidents wait for a coordinator unless fast-tracked.
+           AND (NOT i.needs_verification OR i.fast_track)
            AND NOT EXISTS (SELECT 1 FROM allocations a
                             WHERE a.need_id = n.id AND a.status = 'proposed')
          ORDER BY i.urgency_level DESC, i.first_report_at
