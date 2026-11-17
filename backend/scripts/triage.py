@@ -1,5 +1,3 @@
-"""Urgency scoring (spec 4.4). Credibility and incident clustering arrive in Phase 2."""
-
 import math
 
 # Category severity C in [0, 1]. Hand-set: life-threatening first, information last.
