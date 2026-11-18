@@ -110,11 +110,11 @@ def release(conn: Connection, offer_id: int, need_id: int, qty: int) -> None:
 
 
 def accept(conn: Connection, allocation_id: int) -> bool:
-    # Accept the allocation only if it is still a pending proposal.
+    # Accept the allocation only if it is still a pending, unexpired proposal.
     return (
         conn.execute(
             "UPDATE allocations SET status = 'accepted', updated_at = now() "
-            "WHERE id = %s AND status = 'proposed'",
+            "WHERE id = %s AND status = 'proposed' AND expires_at > now()",
             (allocation_id,),
         ).rowcount
         == 1
