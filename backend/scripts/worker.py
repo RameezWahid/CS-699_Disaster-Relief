@@ -1,11 +1,12 @@
 import json
 import logging
+import time
 import psycopg
 from psycopg import Connection
 
 from scripts.config import DATABASE_URL
 from scripts.extract import extract
-from scripts.incidents import attach_report
+from scripts.incidents import attach_report, detect_silent_zones
 from scripts.matching import upsert_needs
 from scripts.text import normalize, simhash, tag_language, tokens
 from scripts.triage import CATEGORY_SEVERITY, urgency
@@ -15,6 +16,9 @@ MAX_ATTEMPTS = 3
 
 # Poll periodically in case a notification is missed.
 IDLE_POLL_S = 5
+
+# Look for cells that went quiet this often, even while messages keep arriving.
+SILENT_CHECK_S = 60
 
 # A report within this many SimHash bits of a recent report is a near copy of it.
 # Reports are short, so one changed word ("mein" -> "me") moves about 5 bits, while
@@ -193,7 +197,13 @@ def run() -> None:
         # proposals or returns stock from expired ones.
         # TODO(later): DBSCAN merging of incidents that drift together, rainfall from
         # Open-Meteo and official alerts as credibility signals.
+        next_silent_check = 0.0
         while True:
+            if time.monotonic() >= next_silent_check:
+                for zone in detect_silent_zones(conn):
+                    log.warning("silent zone: %s", zone)
+                next_silent_check = time.monotonic() + SILENT_CHECK_S
+
             # Drain available work before waiting for another notification.
             if not claim_and_process(conn):
                 # Notifications wake the worker early. The timeout also handles missed notifications.

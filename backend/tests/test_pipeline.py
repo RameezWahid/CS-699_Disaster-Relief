@@ -81,6 +81,62 @@ def test_report_becomes_incident_with_needs():
         assert set(urgency) >= {"S", "factors", "level", "override"}
 
 
+def test_silent_zone_found_once():
+    from datetime import datetime, timedelta, timezone
+
+    import psycopg
+
+    from scripts.config import DATABASE_URL
+    from scripts.incidents import SILENT_MIN_CITY_REPORTS, SILENT_MIN_SENDERS, detect_silent_zones
+
+    # A random day long ago, so this run sees none of the other runs' reports.
+    run = uuid.uuid4()
+    at = datetime(2000, 1, 1, tzinfo=timezone.utc) - timedelta(days=run.int % 500_000)
+
+    def add_report(conn, n, minutes_ago, lat=None, lon=None, level=4):
+        # status 'done' keeps a running worker container from picking the row up.
+        conn.execute(
+            """
+            WITH ib AS (INSERT INTO inbox (source, source_msg_id, sender_hash, payload, status)
+                        VALUES ('replay', %(msg)s, %(sender)s, '{}', 'done') RETURNING id)
+            INSERT INTO reports (inbox_id, received_at, source, sender_hash, text, lang, simhash,
+                                 has_gps, has_photo, category, category_p, needs, vulnerability,
+                                 geom, urgency_level, needs_review, extraction)
+            SELECT ib.id, %(at)s, 'replay', %(sender)s, 'test', 'en', 0, %(gps)s, false,
+                   'rescue', 0.6, '{}', '{}',
+                   ST_SetSRID(ST_MakePoint(%(lon)s::float8, %(lat)s::float8), 4326),
+                   %(level)s, false, '{}' FROM ib
+            """,
+            {"msg": f"{run}-{n}", "sender": f"{run}-{n}", "at": at - timedelta(minutes=minutes_ago),
+             "gps": lat is not None, "lat": lat, "lon": lon, "level": level},
+        )
+
+    with psycopg.connect(DATABASE_URL, autocommit=True) as conn:
+        # People at Hindmata reported 90 minutes ago, then nothing; the city kept reporting.
+        for n in range(SILENT_MIN_SENDERS):
+            add_report(conn, n, 90, lat=19.00914, lon=72.84193, level=4 + n % 2)
+        # While the whole city is quiet, a quiet cell means nothing.
+        assert detect_silent_zones(conn, at) == []
+        for n in range(SILENT_MIN_CITY_REPORTS):
+            add_report(conn, 100 + n, 10, level=2)
+
+        zones = detect_silent_zones(conn, at)
+        assert len(zones) == 1
+        assert zones[0]["urgency_level"] == 5
+        assert zones[0]["silent_zone"]["senders_before"] == SILENT_MIN_SENDERS
+        incident_id = zones[0]["incident_id"]
+        status, category, verify = conn.execute(
+            "SELECT status, category, needs_verification FROM incidents WHERE id = %s",
+            (incident_id,),
+        ).fetchone()
+        assert (status, category, verify) == ("open", "silent_zone", True)
+
+        # The same silence is reported once, even after a coordinator closes it.
+        assert detect_silent_zones(conn, at + timedelta(minutes=5)) == []
+        conn.execute("UPDATE incidents SET status = 'dismissed' WHERE id = %s", (incident_id,))
+        assert detect_silent_zones(conn, at + timedelta(minutes=10)) == []
+
+
 def test_coordinator_flow_login_verify_offer_accept():
     import psycopg
     from fastapi.testclient import TestClient
