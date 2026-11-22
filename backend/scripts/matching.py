@@ -1,6 +1,5 @@
 import json
 import math
-from datetime import datetime
 
 from psycopg import Connection, Rollback
 
@@ -111,11 +110,11 @@ def release(conn: Connection, offer_id: int, need_id: int, qty: int) -> None:
 
 
 def accept(conn: Connection, allocation_id: int) -> bool:
-    # Accept the allocation only if it is still a pending proposal.
+    # Accept the allocation only if it is still a pending, unexpired proposal.
     return (
         conn.execute(
             "UPDATE allocations SET status = 'accepted', updated_at = now() "
-            "WHERE id = %s AND status = 'proposed'",
+            "WHERE id = %s AND status = 'proposed' AND expires_at > now()",
             (allocation_id,),
         ).rowcount
         == 1
@@ -189,6 +188,8 @@ def propose(conn: Connection) -> list[dict]:
         """
         SELECT n.id, n.qty_open, i.id, i.ward FROM needs n JOIN incidents i ON i.id = n.incident_id
          WHERE n.qty_open > 0 AND i.status IN ('open', 'verified') AND i.geom IS NOT NULL
+           -- Unverified low-credibility incidents wait for a coordinator unless fast-tracked.
+           AND (NOT i.needs_verification OR i.fast_track)
            AND NOT EXISTS (SELECT 1 FROM allocations a
                             WHERE a.need_id = n.id AND a.status = 'proposed')
          ORDER BY i.urgency_level DESC, i.first_report_at

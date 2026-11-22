@@ -10,6 +10,8 @@ type Tab = 'queue' | 'verify' | 'proposals' | 'offers' | 'alerts'
 // Bursts of events (a replay at 60x) collapse into one refetch.
 const REFRESH_DEBOUNCE_MS = 400
 
+// TODO(silent): show category 'silent_zone' as "went quiet, go and check" with its own icon,
+// using urgency.silent (h3, senders_before, city_reports); it has 0 reports and no credibility.
 function IncidentRow({ incident, onSelect }: { incident: Incident; onSelect: () => void }) {
   return (
     <button className="row" onClick={onSelect}>

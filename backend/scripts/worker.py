@@ -1,11 +1,14 @@
 import json
 import logging
+import time
 import psycopg
 from psycopg import Connection
 
+from scripts.classifier import load_classifier
 from scripts.config import DATABASE_URL
 from scripts.extract import extract
-from scripts.incidents import attach_report
+from scripts.geocode import geocode
+from scripts.incidents import attach_report, detect_silent_zones
 from scripts.matching import upsert_needs
 from scripts.text import normalize, simhash, tag_language, tokens
 from scripts.triage import CATEGORY_SEVERITY, urgency
@@ -16,8 +19,13 @@ MAX_ATTEMPTS = 3
 # Poll periodically in case a notification is missed.
 IDLE_POLL_S = 5
 
+# Look for cells that went quiet this often, even while messages keep arriving.
+SILENT_CHECK_S = 60
+
 # A report within this many SimHash bits of a recent report is a near copy of it.
-REPEAT_MAX_BITS = 3
+# Reports are short, so one changed word ("mein" -> "me") moves about 5 bits, while
+# unrelated reports sit around 25 bits apart. Tune on the gold set.
+REPEAT_MAX_BITS = 6
 REPEAT_WINDOW_MIN = 60
 
 # A category picked by the citizen counts for less than a rule match.
@@ -26,14 +34,21 @@ HINT_CATEGORY_P = 0.5
 log = logging.getLogger("worker")
 
 
-def analyse(payload: dict) -> dict:
-    """Run the text pipeline on one inbox payload. No database access, so it is unit-testable."""
+def analyse(payload: dict, conn: Connection | None = None) -> dict:
+    """Run the text pipeline on one inbox payload. Without conn it uses GPS only (unit tests)."""
     text = payload.get("text") or ""
     norm = normalize(text)
     fields = extract(norm)
     category, category_p = fields["category"]["label"], fields["category"]["p"]
 
-    # Rules found nothing specific. Use the category the citizen picked, if any.
+    # Rules found nothing specific. Ask MuRIL, if a trained model is installed.
+    classifier = load_classifier() if category == "info_noise" and norm else None
+    if classifier:
+        guess = classifier.classify(norm)
+        if guess["label"] != "info_noise":
+            category, category_p = guess["label"], guess["p"]
+
+    # Still nothing. Use the category the citizen picked, if any.
     # A hard rule (trapped, drowning, ...) already forced rescue, so it is never overridden here.
     hint = payload.get("category_hint")
     if category == "info_noise" and hint in CATEGORY_SEVERITY:
@@ -43,15 +58,25 @@ def analyse(payload: dict) -> dict:
     # Waiting time is zero at intake. Incidents account for it as they age.
     triage = urgency(category, headcount, bool(fields["vulnerability"]), 0, fields["override"])
 
-    # Only GPS locations for now. The gazetteer geocoder fills in place names later.
     lat, lon = payload.get("lat"), payload.get("lon")
     has_gps = lat is not None and lon is not None
-    location = {
-        "name": None,
-        "source": "gps" if has_gps else None,
-        "confidence": 1.0 if has_gps else 0.0,
-        "uncertainty_m": payload.get("accuracy_m") if has_gps else None,
-    }
+    if conn is not None:
+        # A GPS pin inside Mumbai wins. Otherwise match a place named in the text.
+        location = geocode(conn, norm, lat, lon)
+        if location["source"] == "gps" and payload.get("accuracy_m"):
+            location["uncertainty_m"] = payload["accuracy_m"]
+        lat, lon = location["lat"], location["lon"]
+        has_gps = location["source"] == "gps"
+    else:
+        lat, lon = (lat, lon) if has_gps else (None, None)
+        location = {
+            "name": None,
+            "source": "gps" if has_gps else None,
+            "confidence": 1.0 if has_gps else 0.0,
+            "uncertainty_m": payload.get("accuracy_m") if has_gps else None,
+            "ambiguous": False,
+        }
+    # TODO(gazetteer): only the seeded places are matched. Add OSM roads, stations and localities.
 
     return {
         "text": text,
@@ -66,8 +91,9 @@ def analyse(payload: dict) -> dict:
         "override": fields["override"],
         "urgency": triage,
         "location": location,
-        "lat": lat if has_gps else None,
-        "lon": lon if has_gps else None,
+        "has_gps": has_gps,
+        "lat": lat,
+        "lon": lon,
     }
 
 
@@ -89,7 +115,7 @@ def find_repeat(conn: Connection, received_at, sh: int | None) -> int | None:
 
 
 def process(conn: Connection, inbox_id, source, sender, received_at, payload) -> None:
-    r = analyse(payload)
+    r = analyse(payload, conn)
     loc = r["location"]
 
     # Create the report only if this inbox row has not produced one already.
@@ -110,17 +136,20 @@ def process(conn: Connection, inbox_id, source, sender, received_at, payload) ->
         ON CONFLICT (inbox_id) DO NOTHING
         RETURNING id, ward
         """,
-        {"id": inbox_id, "at": received_at, "source": source, "sender": sender,
+        {"id": inbox_id, "at": received_at, "sender": sender,
+         # Reports sent by a logged-in responder count as responder evidence.
+         "source": "responder" if payload.get("responder") else source,
          "text": r["text"], "lang": r["lang"], "simhash": r["simhash"] or 0,
          "repeat_of": find_repeat(conn, received_at, r["simhash"]),
-         "gps": r["lat"] is not None, "photo": bool(payload.get("photo")),
+         "gps": r["has_gps"], "photo": bool(payload.get("photo")),
          "category": r["category"], "category_p": r["category_p"], "headcount": r["headcount"],
          "needs": r["needs"], "vulnerability": r["vulnerability"],
          "lat": r["lat"], "lon": r["lon"], "uncertainty": loc["uncertainty_m"],
          "confidence": loc["confidence"], "loc_source": loc["source"],
          "urgency": r["urgency"]["level"],
-         # Coordinators check reports with no location or no recognisable category.
-         "review": r["lat"] is None or r["category"] == "info_noise",
+         # Coordinators check reports with no location, an ambiguous place match,
+         # or no recognisable category.
+         "review": r["lat"] is None or loc["ambiguous"] or r["category"] == "info_noise",
          "extraction": json.dumps(r, ensure_ascii=False)},
     ).fetchone()
 
@@ -180,7 +209,19 @@ def run() -> None:
         # PostgreSQL sends notifications when new inbox rows arrive.
         listener.execute("LISTEN inbox")
 
+        # TODO(periodic): every ~30 s between messages, run the work that does not depend on a
+        # new report: incidents.refresh_active() (urgency grows with waiting time), then
+        # matching.expire_proposals() and matching.propose(). Until then nothing creates
+        # proposals or returns stock from expired ones.
+        # TODO(later): DBSCAN merging of incidents that drift together, rainfall from
+        # Open-Meteo and official alerts as credibility signals.
+        next_silent_check = 0.0
         while True:
+            if time.monotonic() >= next_silent_check:
+                for zone in detect_silent_zones(conn):
+                    log.warning("silent zone: %s", zone)
+                next_silent_check = time.monotonic() + SILENT_CHECK_S
+
             # Drain available work before waiting for another notification.
             if not claim_and_process(conn):
                 # Notifications wake the worker early. The timeout also handles missed notifications.

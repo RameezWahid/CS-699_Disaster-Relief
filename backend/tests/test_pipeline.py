@@ -70,3 +70,198 @@ def test_report_becomes_incident_with_needs():
             "SELECT kind, qty_total FROM needs WHERE incident_id = %s", (incident_id,)
         ).fetchall()
         assert ("boat", 1) in needs
+
+        # Hindmata is a chronic flood spot; urgency 5 fast-tracks past verification.
+        signals, fast_track, urgency = conn.execute(
+            "SELECT credibility_signals, fast_track, urgency FROM incidents WHERE id = %s",
+            (incident_id,),
+        ).fetchone()
+        assert signals["chronic_spot"] is True
+        assert fast_track is True
+        assert set(urgency) >= {"S", "factors", "level", "override"}
+
+
+
+def test_text_only_report_is_geocoded():
+    import json
+    from datetime import datetime, timezone
+
+    import psycopg
+
+    from scripts.config import DATABASE_URL
+    from scripts.worker import process
+
+    # Sent by a logged-in responder, so it also counts as responder evidence.
+    payload = {"text": "Andheri Subway mein paani bhar gaya, gaadi phasi hai", "responder": "r1"}
+    with psycopg.connect(DATABASE_URL, autocommit=True) as conn:
+        # status 'done' keeps a running worker container from picking the row up.
+        inbox_id = conn.execute(
+            "INSERT INTO inbox (source, source_msg_id, sender_hash, payload, status) "
+            "VALUES ('replay', %s, %s, %s, 'done') RETURNING id",
+            (str(uuid.uuid4()), str(uuid.uuid4()), json.dumps(payload)),
+        ).fetchone()[0]
+        with conn.transaction():
+            process(conn, inbox_id, "replay", "geocode-test", datetime.now(timezone.utc), payload)
+
+        has_gps, source, ward, located, sent_by = conn.execute(
+            "SELECT has_gps, loc_source, ward, geom IS NOT NULL, source FROM reports "
+            "WHERE inbox_id = %s",
+            (inbox_id,),
+        ).fetchone()
+        assert sent_by == "responder"
+        # No GPS, but the place named in the text gives a point and a ward.
+        assert (has_gps, located) == (False, True)
+        assert source.startswith("gazetteer:")
+        assert ward is not None
+
+def test_silent_zone_found_once():
+    from datetime import datetime, timedelta, timezone
+
+    import psycopg
+
+    from scripts.config import DATABASE_URL
+    from scripts.incidents import SILENT_MIN_CITY_REPORTS, SILENT_MIN_SENDERS, detect_silent_zones
+
+    # A random day long ago, so this run sees none of the other runs' reports.
+    run = uuid.uuid4()
+    at = datetime(2000, 1, 1, tzinfo=timezone.utc) - timedelta(days=run.int % 500_000)
+
+    def add_report(conn, n, minutes_ago, lat=None, lon=None, level=4):
+        # status 'done' keeps a running worker container from picking the row up.
+        conn.execute(
+            """
+            WITH ib AS (INSERT INTO inbox (source, source_msg_id, sender_hash, payload, status)
+                        VALUES ('replay', %(msg)s, %(sender)s, '{}', 'done') RETURNING id)
+            INSERT INTO reports (inbox_id, received_at, source, sender_hash, text, lang, simhash,
+                                 has_gps, has_photo, category, category_p, needs, vulnerability,
+                                 geom, urgency_level, needs_review, extraction)
+            SELECT ib.id, %(at)s, 'replay', %(sender)s, 'test', 'en', 0, %(gps)s, false,
+                   'rescue', 0.6, '{}', '{}',
+                   ST_SetSRID(ST_MakePoint(%(lon)s::float8, %(lat)s::float8), 4326),
+                   %(level)s, false, '{}' FROM ib
+            """,
+            {"msg": f"{run}-{n}", "sender": f"{run}-{n}", "at": at - timedelta(minutes=minutes_ago),
+             "gps": lat is not None, "lat": lat, "lon": lon, "level": level},
+        )
+
+    with psycopg.connect(DATABASE_URL, autocommit=True) as conn:
+        # People at Hindmata reported 90 minutes ago, then nothing; the city kept reporting.
+        for n in range(SILENT_MIN_SENDERS):
+            add_report(conn, n, 90, lat=19.00914, lon=72.84193, level=4 + n % 2)
+        # While the whole city is quiet, a quiet cell means nothing.
+        assert detect_silent_zones(conn, at) == []
+        for n in range(SILENT_MIN_CITY_REPORTS):
+            add_report(conn, 100 + n, 10, level=2)
+
+        zones = detect_silent_zones(conn, at)
+        assert len(zones) == 1
+        assert zones[0]["urgency_level"] == 5
+        assert zones[0]["silent_zone"]["senders_before"] == SILENT_MIN_SENDERS
+        incident_id = zones[0]["incident_id"]
+        status, category, verify = conn.execute(
+            "SELECT status, category, needs_verification FROM incidents WHERE id = %s",
+            (incident_id,),
+        ).fetchone()
+        assert (status, category, verify) == ("open", "silent_zone", True)
+
+        # The same silence is reported once, even after a coordinator closes it.
+        assert detect_silent_zones(conn, at + timedelta(minutes=5)) == []
+        conn.execute("UPDATE incidents SET status = 'dismissed' WHERE id = %s", (incident_id,))
+        assert detect_silent_zones(conn, at + timedelta(minutes=10)) == []
+
+
+def test_coordinator_flow_login_verify_offer_accept():
+    import psycopg
+    from fastapi.testclient import TestClient
+
+    from scripts.api import app, hasher
+    from scripts.config import DATABASE_URL
+    from scripts.worker import claim_and_process
+
+    run = uuid.uuid4().hex[:8]
+    coordinator, responder, outsider = f"coord-{run}", f"resp-{run}", f"other-{run}"
+    with psycopg.connect(DATABASE_URL, autocommit=True) as conn:
+        for name, role, wards in [(coordinator, "coordinator", ["K/E"]),
+                                  (responder, "responder", ["K/E"]),
+                                  (outsider, "coordinator", ["A"])]:
+            conn.execute("INSERT INTO users (username, password_hash, role, wards) "
+                         "VALUES (%s, %s, %s, %s)", (name, hasher.hash("correct-horse"), role, wards))
+
+    def login(client, name, password="correct-horse"):
+        return client.post("/api/auth/login", json={"username": name, "password": password})
+
+    with TestClient(app) as client:
+        # Dashboard data needs a session; citizen reporting does not.
+        assert client.get("/api/auth/me").status_code == 401
+        assert client.get("/api/incidents").status_code == 401
+        assert login(client, coordinator, "wrong").status_code == 401
+        assert login(client, "nobody", "wrong").status_code == 401
+
+        # Andheri subway (ward K/E): one sender with GPS is below the credibility bar.
+        form = {"text": "Andheri subway mein 4 log phase hain, boat bhejo", "lat": "19.12037",
+                "lon": "72.84908", "client_msg_id": run, "device_id": run}
+        inbox_id = client.post("/api/reports", data=form).json()["inbox_id"]
+        with psycopg.connect(DATABASE_URL, autocommit=True) as conn:
+            deadline = time.monotonic() + DEADLINE_S
+            while time.monotonic() < deadline:
+                row = conn.execute("SELECT incident_id FROM reports WHERE inbox_id = %s",
+                                   (inbox_id,)).fetchone()
+                if row:
+                    break
+                if not claim_and_process(conn):
+                    time.sleep(0.2)
+        incident_id = row[0]
+
+        me = login(client, coordinator).json()
+        assert me == {"username": coordinator, "role": "coordinator", "wards": ["K/E"]}
+        assert client.get("/api/auth/me").json() == me
+
+        assert incident_id in [i["id"] for i in client.get("/api/incidents").json()]
+        assert incident_id in [i["id"] for i in client.get("/api/incidents?queue=verify").json()]
+        detail = client.get(f"/api/incidents/{incident_id}").json()
+        assert detail["reports"][0]["extraction"]["location"]["source"] == "gps"
+        assert [n["kind"] for n in detail["needs"]] == ["boat"]
+
+        # Verifying takes it out of the queue.
+        assert client.post(f"/api/incidents/{incident_id}/status",
+                           json={"status": "verified"}).status_code == 200
+        assert incident_id not in [i["id"] for i in client.get("/api/incidents?queue=verify").json()]
+
+        # A boat offer next door gets proposed, and the coordinator accepts it once.
+        offer = client.post("/api/offers", json={"kind": "boat", "provider": f"Fire brigade {run}",
+                                                 "qty": 3, "lat": 19.1206, "lon": 72.8492})
+        assert offer.status_code == 201
+        assert offer.json()["id"] in [o["id"] for o in client.get("/api/offers").json()]
+        assert client.post("/api/offers", json={"kind": "boat", "provider": "x", "qty": 0,
+                                                "lat": 19.1, "lon": 72.8}).status_code == 422
+        mine = [a for a in client.get("/api/allocations?status=proposed").json()
+                if a["incident_id"] == incident_id]
+        assert mine and mine[0]["expires_in_min"] > 0
+        allocation_id = mine[0]["id"]
+        assert client.post(f"/api/allocations/{allocation_id}/accept").status_code == 200
+        assert client.post(f"/api/allocations/{allocation_id}/accept").status_code == 409
+
+        # Another ward's coordinator cannot see it; a responder can look but not decide.
+        login(client, outsider)
+        assert client.get(f"/api/incidents/{incident_id}").status_code == 404
+        assert incident_id not in [i["id"] for i in client.get("/api/incidents").json()]
+        login(client, responder)
+        assert client.get(f"/api/incidents/{incident_id}").status_code == 200
+        assert client.post(f"/api/incidents/{incident_id}/status",
+                           json={"status": "resolved"}).status_code == 403
+
+        # A responder's offline outbox resends the same report: it is queued once, as theirs.
+        field = {"text": "Andheri subway par paani utar gaya", "client_msg_id": f"{run}-field",
+                 "device_id": run}
+        queued = client.post("/api/reports", data=field).json()["inbox_id"]
+        assert client.post("/api/reports", data=field).json() == {"inbox_id": None, "duplicate": True}
+        with psycopg.connect(DATABASE_URL, autocommit=True) as conn:
+            payload = conn.execute("SELECT payload FROM inbox WHERE id = %s", (queued,)).fetchone()[0]
+        assert payload["responder"] == responder
+
+        # Resolve it so later runs start a fresh incident here.
+        login(client, coordinator)
+        assert client.post(f"/api/incidents/{incident_id}/status",
+                           json={"status": "resolved"}).status_code == 200
+        assert client.post("/api/auth/logout").status_code == 200
+        assert client.get("/api/auth/me").status_code == 401
