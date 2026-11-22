@@ -22,9 +22,6 @@ SENDER_HASH_SECRET = os.environ.get(
     "SENDER_HASH_SECRET", "dev-only-secret"
 ).encode()
 
-# Empty means no Telegram bot token is configured.
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-
 # Password for the restricted application database role.
 # The migration script sets this password when the relief_app role exists.
 APP_DB_PASSWORD = os.environ.get("APP_DB_PASSWORD", "")

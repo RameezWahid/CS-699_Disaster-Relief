@@ -1,4 +1,4 @@
-# Shared intake for web form, Telegram bot, and replay.
+# Shared intake for the web form, the responder app, and replay.
 # Hide sender IDs and put each new message in the database inbox.
 
 import hashlib
@@ -19,7 +19,7 @@ def sender_hash(source: str, raw_sender_id: str) -> str:
     message = f"{source}:{raw_sender_id}".encode()
 
     # Use a secret key to make the hash harder to guess.
-    # Store the hash, not the original phone number or Telegram ID.
+    # Store the hash, not the original device ID.
     return hmac.new(
         SENDER_HASH_SECRET,
         message,

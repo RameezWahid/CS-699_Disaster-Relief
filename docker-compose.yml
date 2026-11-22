@@ -54,14 +54,6 @@ services:
     depends_on: {setup: {condition: service_completed_successfully}}
     restart: unless-stopped
 
-  bot:
-    # Accept reports from Telegram. The worker handles processing separately.
-    <<: *backend
-    command: python -m scripts.telegram_bot
-    depends_on: {setup: {condition: service_completed_successfully}}
-    # Restart if the bot exits. An empty token makes it exit without doing useful work.
-    restart: unless-stopped
-
   web:
     # Build and serve the frontend as its own container.
     build: {context: ., dockerfile: frontend/Dockerfile}
