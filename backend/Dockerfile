@@ -2,6 +2,9 @@
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+# osmium (OSM places in load_base.py) links against libexpat, which the slim image leaves out.
+RUN apt-get update && apt-get install -y --no-install-recommends libexpat1 \
+    && rm -rf /var/lib/apt/lists/*
 
 # Mirror the repo layout so config.REPO_DIR resolves to /app:
 # /app/backend/scripts, /app/db/migrations, and /app/data (mounted by compose).
