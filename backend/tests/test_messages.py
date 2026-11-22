@@ -3,6 +3,7 @@ import random
 import pytest
 
 from scripts.messages import CLASSES, STYLES, TEMPLATES, add_noise, headcount_phrase, templates_for
+from scripts.train_templates import TRAIN_EXTRA
 
 
 @pytest.mark.parametrize("style", STYLES)
@@ -12,7 +13,8 @@ def test_every_style_and_class_has_train_and_replay_templates(style, label):
     replay = templates_for(style, label, "replay")
     assert train and replay
     assert not set(train) & set(replay)
-    assert len(train) + len(replay) == len(TEMPLATES[(style, label)])
+    extra = TRAIN_EXTRA.get((style, label), [])
+    assert len(train) + len(replay) == len(TEMPLATES[(style, label)]) + len(extra)
 
 
 @pytest.mark.parametrize("style", STYLES)
@@ -27,3 +29,16 @@ def test_headcount_phrase_returns_the_number_it_renders(style):
 def test_noise_is_deterministic_for_a_seed():
     text = "please help, 4 people stuck near Hindmata"
     assert add_noise(text, "en", random.Random(3)) == add_noise(text, "en", random.Random(3))
+
+
+def test_training_extras_never_reach_replay_and_add_variety():
+    for (style, label), extra in TRAIN_EXTRA.items():
+        assert style in STYLES and label in CLASSES
+        assert not set(extra) & set(templates_for(style, label, "replay"))
+        assert len(set(extra)) == len(extra)
+
+
+def test_extras_use_only_known_placeholders():
+    for extra in TRAIN_EXTRA.values():
+        for template in extra:
+            template.format(p="Dadar", n="4 people", v="my mother")
