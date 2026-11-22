@@ -1,0 +1,103 @@
+id,place_text,lat,lon,ward,why_check
+G001,Sion Koliwada,19.0420,72.8700,F/N,623 m from the OpenStreetMap point with this name
+G006,Lallubhai Compound,19.0510,72.9310,M/E,484 m from the OpenStreetMap point with this name
+G007,Malad subway,19.1875,72.8445,P/N,554 m from the OpenStreetMap point with this name
+G009,Jogeshwari East,19.1400,72.8600,K/E,603 m from the OpenStreetMap point with this name
+G011,Ganesh Nagar,19.2540,72.8650,R/N,13284 m from the OpenStreetMap point with this name
+G016,Tilak Nagar,19.0680,72.8950,M/W,329 m from the OpenStreetMap point with this name
+G021,90 feet road,19.0450,72.8530,G/N,777 m from the OpenStreetMap point with this name
+G025,Antop Hill,19.0220,72.8640,F/N,525 m from the OpenStreetMap point with this name
+G026,Qureshi Nagar,19.0670,72.8860,L,1219 m from the OpenStreetMap point with this name
+G030,Sewri,19.0000,72.8570,F/S,303 m from the OpenStreetMap point with this name
+G031,Kherwadi,19.0640,72.8470,H/E,382 m from the OpenStreetMap point with this name
+G034,Pratap Nagar,19.1460,72.9420,S,2383 m from the OpenStreetMap point with this name
+G039,Gulmohar Road,19.1050,72.8320,K/W,687 m from the OpenStreetMap point with this name
+G040,Cheeta Camp,19.0460,72.9220,M/E,2893 m from the OpenStreetMap point with this name
+G041,Vile Parle,19.1000,72.8500,K/E,630 m from the OpenStreetMap point with this name
+G043,LBS road,19.0730,72.8800,L,1202 m from the OpenStreetMap point with this name
+G044,Khar subway,19.0720,72.8400,H/W,367 m from the OpenStreetMap point with this name
+G046,Parel,19.0040,72.8400,F/S,558 m from the OpenStreetMap point with this name
+G047,Malad underpass,19.1875,72.8445,P/N,479 m from the OpenStreetMap point with this name
+G054,K/W ward,19.1360,72.8300,K/W,2065 m from the OpenStreetMap point with this name
+G061,Kamani,19.0720,72.8830,L,1936 m from the OpenStreetMap point with this name
+G062,Sion Koliwada,19.0420,72.8700,F/N,623 m from the OpenStreetMap point with this name
+G063,Mahim Koliwada,19.0450,72.8380,G/N,312 m from the OpenStreetMap point with this name
+G065,Pratap Nagar,19.1460,72.9420,S,2383 m from the OpenStreetMap point with this name
+G066,Jarimari,19.0970,72.8830,L,559 m from the OpenStreetMap point with this name
+G068,Bhakti Park,19.0200,72.8650,F/N,1656 m from the OpenStreetMap point with this name
+G071,Nahur,19.1550,72.9460,T,"lat/lon is in ward S, row says T"
+G072,Tilak Nagar,19.0680,72.8950,M/W,329 m from the OpenStreetMap point with this name
+G073,60 feet road,19.0440,72.8500,G/N,329 m from the OpenStreetMap point with this name
+G075,Lalbaug flyover,18.9950,72.8350,F/S,437 m from the OpenStreetMap point with this name
+G076,Kalina,19.0720,72.8560,H/E,980 m from the OpenStreetMap point with this name
+G077,Oshiwara,19.1500,72.8340,P/S,"lat/lon is in ward K/W, row says P/S"
+G078,Dongri,18.9580,72.8330,B,617 m from the OpenStreetMap point with this name
+G085,Nehru Nagar,19.0640,72.8880,L,808 m from the OpenStreetMap point with this name
+G087,Wadala,19.0170,72.8590,F/N,1313 m from the OpenStreetMap point with this name
+G088,Bandstand,19.0430,72.8190,H/W,882 m from the OpenStreetMap point with this name
+G089,Dahisar East,19.2570,72.8690,R/N,1059 m from the OpenStreetMap point with this name
+G091,Dharavi,19.0430,72.8530,G/N,499 m from the OpenStreetMap point with this name
+G092,Aarey Colony,19.1550,72.8780,P/S,775 m from the OpenStreetMap point with this name
+G093,Sion Hospital,19.0365,72.8636,F/N,393 m from the OpenStreetMap point with this name
+G096,Kanjurmarg,19.1300,72.9300,S,1078 m from the OpenStreetMap point with this name
+G098,Chunabhatti,19.0500,72.8790,L,668 m from the OpenStreetMap point with this name
+G100,Antop Hill,19.0220,72.8640,F/N,525 m from the OpenStreetMap point with this name
+G103,Malvani,19.1900,72.8180,P/N,518 m from the OpenStreetMap point with this name
+G106,Asalpha,19.0950,72.9100,N,1540 m from the OpenStreetMap point with this name
+G107,Mahavir Nagar,19.2080,72.8480,R/S,1318 m from the OpenStreetMap point with this name
+G108,Charkop,19.2100,72.8250,R/S,467 m from the OpenStreetMap point with this name
+G110,Bharat Nagar,19.0620,72.8500,H/E,8277 m from the OpenStreetMap point with this name
+G113,Matunga Labour Camp,19.0300,72.8600,F/N,1050 m from the OpenStreetMap point with this name
+G116,Sangharsh Nagar,19.1050,72.8900,L,1205 m from the OpenStreetMap point with this name
+G117,Behram Baug,19.1380,72.8450,K/W,1167 m from the OpenStreetMap point with this name
+G118,Aarey,19.1550,72.8780,P/S,775 m from the OpenStreetMap point with this name
+G119,Dahisar West,19.2500,72.8490,R/N,434 m from the OpenStreetMap point with this name
+G120,Machimar Nagar,18.9120,72.8160,A,1229 m from the OpenStreetMap point with this name
+G121,Saki Vihar road,19.1150,72.8950,S,"1606 m from the OpenStreetMap point with this name; lat/lon is in ward L, row says S"
+G124,Parel,19.0040,72.8400,F/S,558 m from the OpenStreetMap point with this name
+G126,Malad subway,19.1875,72.8445,P/N,554 m from the OpenStreetMap point with this name
+G128,Gulmohar road,19.1050,72.8320,K/W,687 m from the OpenStreetMap point with this name
+G129,LBS marg,19.0860,72.9080,N,1092 m from the OpenStreetMap point with this name
+G130,Dahisar subway,19.2500,72.8590,R/N,663 m from the OpenStreetMap point with this name
+G135,Kurla Kalina,19.0720,72.8700,L,"lat/lon is in ward H/E, row says L"
+G141,Milan subway,19.0990,72.8420,K/W,960 m from the OpenStreetMap point with this name
+G144,Marine Drive,18.9440,72.8230,D,"1451 m from the OpenStreetMap point with this name; lat/lon is in ward C, row says D"
+G149,Vikhroli,19.1100,72.9260,S,"lat/lon is in ward N, row says S"
+G175,चकाला,19.1110,72.8650,K/E,583 m from the OpenStreetMap point with this name
+G178,देवनार,19.0500,72.9190,M/E,596 m from the OpenStreetMap point with this name
+G183,डायमंड गार्डन,19.0600,72.9000,M/W,941 m from the OpenStreetMap point with this name
+G184,कुरार गाँव,19.1980,72.8590,P/N,"lat/lon is in ward R/S, row says P/N"
+G190,चारकोप,19.2100,72.8250,R/S,467 m from the OpenStreetMap point with this name
+G198,करी रोड स्टेशन,19.0000,72.8330,F/S,"lat/lon is in ward G/S, row says F/S"
+G203,देवनार,19.0500,72.9190,M/E,596 m from the OpenStreetMap point with this name
+G211,कन्नमवार नगर,19.1070,72.9340,S,"lat/lon is in ward N, row says S"
+G214,आनंद नगर,19.2500,72.8700,R/N,889 m from the OpenStreetMap point with this name
+G215,चकाला,19.1110,72.8650,K/E,583 m from the OpenStreetMap point with this name
+G218,कुरार गाव,19.1980,72.8590,P/N,"lat/lon is in ward R/S, row says P/N"
+G222,कांजूरमार्ग,19.1300,72.9300,S,1078 m from the OpenStreetMap point with this name
+G226,डहाणूकरवाडी,19.2040,72.8420,R/S,795 m from the OpenStreetMap point with this name
+G227,शिवडी,18.9990,72.8580,F/S,477 m from the OpenStreetMap point with this name
+G230,देवनार,19.0500,72.9190,M/E,596 m from the OpenStreetMap point with this name
+G232,लालबाग,18.9950,72.8350,F/S,426 m from the OpenStreetMap point with this name
+G240,आरे,19.1550,72.8780,P/S,775 m from the OpenStreetMap point with this name
+G244,कुरार व्हिलेज,19.1980,72.8590,P/N,"lat/lon is in ward R/S, row says P/N"
+G245,चिंचपोकळी स्टेशन,18.9860,72.8330,F/S,"lat/lon is in ward E, row says F/S"
+G254,लालबाग,18.9950,72.8350,F/S,426 m from the OpenStreetMap point with this name
+G257,Four Bungalows,19.1260,72.8250,K/W,316 m from the OpenStreetMap point with this name
+G259,Swastik Park,19.0580,72.9070,M/W,1763 m from the OpenStreetMap point with this name
+G265,Pali Hill,19.0680,72.8260,H/W,360 m from the OpenStreetMap point with this name
+G266,Eksar,19.2360,72.8450,R/C,513 m from the OpenStreetMap point with this name
+G267,Parsi Colony,19.0200,72.8430,F/N,"lat/lon is in ward G/N, row says F/N"
+G268,Walkeshwar,18.9450,72.7950,D,1247 m from the OpenStreetMap point with this name
+G269,Orlem,19.1850,72.8260,P/N,1722 m from the OpenStreetMap point with this name
+G272,Mandala,19.0480,72.9400,M/E,631 m from the OpenStreetMap point with this name
+G273,Marve Road,19.1850,72.8250,P/N,1603 m from the OpenStreetMap point with this name
+G274,Swastik Park,19.0580,72.9070,M/W,1763 m from the OpenStreetMap point with this name
+G275,Pali Hill,19.0680,72.8260,H/W,360 m from the OpenStreetMap point with this name
+G279,Orlem,19.1850,72.8260,P/N,1722 m from the OpenStreetMap point with this name
+G282,Walkeshwar,18.9450,72.7950,D,1247 m from the OpenStreetMap point with this name
+G284,Eksar,19.2360,72.8450,R/C,513 m from the OpenStreetMap point with this name
+G285,Marve Road,19.1850,72.8250,P/N,1603 m from the OpenStreetMap point with this name
+G288,Pali Hill,19.0680,72.8260,H/W,360 m from the OpenStreetMap point with this name
+G291,Orlem,19.1850,72.8260,P/N,1722 m from the OpenStreetMap point with this name
+G297,Walkeshwar,18.9450,72.7950,D,1247 m from the OpenStreetMap point with this name
