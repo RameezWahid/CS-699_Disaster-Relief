@@ -3,6 +3,11 @@
 
 # Python virtual environments
 .venv/
+# Python bytecode
+__pycache__/
+
+# Citizen report photos (personal data)
+data/photos/
 # HumAID (research use only, no redistribution), generated training sets and model weights
 data/raw/
 data/training/

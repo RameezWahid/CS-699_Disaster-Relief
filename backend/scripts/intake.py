@@ -5,9 +5,13 @@ import hashlib
 import hmac
 import json
 
-from psycopg import AsyncConnection
+from psycopg import Connection
 
 from scripts.config import SENDER_HASH_SECRET
+
+# Each sender may queue at most this many messages per window.
+RATE_LIMIT_COUNT = 10
+RATE_LIMIT_WINDOW_MIN = 10
 
 
 def sender_hash(source: str, raw_sender_id: str) -> str:
@@ -23,8 +27,8 @@ def sender_hash(source: str, raw_sender_id: str) -> str:
     ).hexdigest()
 
 
-async def enqueue(
-    conn: AsyncConnection,
+def enqueue(
+    conn: Connection,
     source: str,
     source_msg_id: str,
     sender: str,
@@ -32,7 +36,7 @@ async def enqueue(
 ) -> int | None:
     # Insert the message and let the database reject duplicates.
     # A separate duplicate check would create a race between concurrent requests.
-    cursor = await conn.execute(
+    cursor = conn.execute(
         """
         INSERT INTO inbox (source, source_msg_id, sender_hash, payload)
         VALUES (%s, %s, %s, %s)
@@ -44,5 +48,17 @@ async def enqueue(
 
     # A new message returns its inbox ID.
     # A duplicate returns no row, so return None.
-    row = await cursor.fetchone()
+    row = cursor.fetchone()
     return row[0] if row else None
+
+
+def rate_limited(conn: Connection, sender: str) -> bool:
+    # Count only queued messages. Rejected duplicates never reach the inbox.
+    # Concurrent requests from one sender can overshoot the limit slightly; that is acceptable.
+    cursor = conn.execute(
+        "SELECT count(*) FROM inbox "
+        "WHERE sender_hash = %s AND received_at > now() - make_interval(mins => %s)",
+        (sender, RATE_LIMIT_WINDOW_MIN),
+    )
+    (count,) = cursor.fetchone()
+    return count >= RATE_LIMIT_COUNT

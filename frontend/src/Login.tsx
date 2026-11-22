@@ -10,7 +10,8 @@ export default function Login({ onLogin }: { onLogin: (me: Me) => void }) {
     event.preventDefault()
     setError('')
     try {
-     onLogin({ username, role: 'user', redirectTo: '/dashboard' });
+      // The server sets the session cookie and returns who we are.
+      onLogin(await api<Me>('/api/auth/login', { body: { username, password } }))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'login failed')
     }
