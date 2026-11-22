@@ -13,7 +13,8 @@ def test_spec_example_runs_whole_pipeline():
     assert r["headcount"] == 5
     assert r["vulnerability"] == ["child"]
     assert r["urgency"]["level"] == 5
-    assert r["location"] == {"name": None, "source": "gps", "confidence": 1.0, "uncertainty_m": 20}
+    assert r["location"] == {"name": None, "source": "gps", "confidence": 1.0, "uncertainty_m": 20,
+                             "ambiguous": False}
     assert isinstance(r["simhash"], int)
 
 

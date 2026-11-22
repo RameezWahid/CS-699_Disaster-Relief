@@ -2,3 +2,6 @@
 -r requirements.txt
 pytest==8.3.5
 httpx==0.28.1
+# Scenario replay and gold-set validation.
+PyYAML==6.0.2
+shapely==2.1.1
