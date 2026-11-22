@@ -95,3 +95,28 @@ blockquote small { color: var(--muted); }
   .dashboard { grid-template-columns: 1fr; grid-template-rows: 50vh auto; height: auto; }
   .panel { border-left: none; border-top: 1px solid var(--border); }
 }
+
+/* Responder app (offline demo) */
+.responder { max-width: 720px; margin: 0 auto; padding: 12px 16px; }
+.responder-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.responder-head span:last-child { color: #666; margin-left: auto; }
+.dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.dot.on { background: #16a34a; }
+.dot.off { background: #dc2626; }
+.waiting { background: #fef3c7; padding: 8px; border-radius: 6px; display: flex; gap: 8px; align-items: center; }
+.rejected { background: #fee2e2; padding: 8px; border-radius: 6px; margin: 8px 0; }
+.rejected p { margin: 4px 0; }
+.tasks { list-style: none; padding: 0; }
+.task { display: flex; justify-content: space-between; gap: 12px; padding: 10px; margin-bottom: 8px; border: 1px solid #ddd; border-left-width: 6px; border-radius: 6px; }
+.task.level-5 { border-left-color: #b91c1c; }
+.task.level-4 { border-left-color: #ea580c; }
+.task.level-3 { border-left-color: #ca8a04; }
+.task-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.task-status { font-size: 0.85em; text-transform: uppercase; color: #555; }
+.field-report { display: flex; flex-direction: column; gap: 8px; }
+.field-report div { display: flex; gap: 8px; }
+@media (prefers-color-scheme: dark) {
+  .waiting { background: #422006; }
+  .rejected { background: #450a0a; }
+  .task { border-color: #444; }
+}
