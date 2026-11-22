@@ -6,6 +6,8 @@ phrasings the classifier never saw in training. Templates need review by fluent 
 
 import random
 
+from scripts.train_templates import TRAIN_EXTRA
+
 STYLES = ["en", "hinglish", "hi", "mr", "mr_latin"]
 CLASSES = ["rescue", "medical", "food_water", "shelter", "road_blocked", "info_noise"]
 REPLAY_EVERY = 4
@@ -326,7 +328,13 @@ def add_noise(text: str, style: str, rng: random.Random) -> str:
 
 
 def templates_for(style: str, label: str, part: str) -> list[str]:
-    """Templates for "train" or "replay"; the two sets never overlap."""
+    """Templates for "train" or "replay"; the two sets never overlap.
+
+    Training also gets TRAIN_EXTRA, so the replay set stays the same fixed held-out check.
+    """
     templates = TEMPLATES[(style, label)]
     held_out = {i for i in range(len(templates)) if i % REPLAY_EVERY == REPLAY_EVERY - 1}
-    return [t for i, t in enumerate(templates) if (i in held_out) == (part == "replay")]
+    chosen = [t for i, t in enumerate(templates) if (i in held_out) == (part == "replay")]
+    if part == "train":
+        chosen += TRAIN_EXTRA.get((style, label), [])
+    return chosen
