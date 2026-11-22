@@ -13,6 +13,8 @@ export interface Urgency {
   base_level: number
   level: number
   override: string | null
+  // Set only on silent-zone incidents, which have no reports and no factors.
+  silent?: { h3: string; senders_before: number; city_reports: number }
 }
 
 export interface Incident {

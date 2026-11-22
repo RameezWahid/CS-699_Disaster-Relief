@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, type IncidentDetail, type Me, type Need, type Offer } from './api.ts'
+import { quietMinutes } from './urgency.ts'
 
 const SIGNAL_LABELS: Record<string, string> = {
   senders: 'distinct senders', gps: 'GPS pin', photo: 'photo', heavy_rain: 'heavy rain nearby',
@@ -65,11 +66,28 @@ export default function IncidentPanel({ id, me, offers, version, onClose, onChan
   if (!incident) return <div className="panel-body"><button className="link" onClick={onClose}>← Back</button><p>{message || 'Loading…'}</p></div>
   const canDecide = me.role !== 'responder'
   const factors = incident.urgency.factors ?? {}
+  const silent = incident.urgency.silent
 
   return (
     <div className="panel-body incident">
       <button className="link" onClick={onClose}>← Back to lists</button>
-      <h2>#{incident.id} {incident.category.replace('_', ' ')} · urgency {incident.urgency_level}</h2>
+      <h2>#{incident.id} {silent ? 'went quiet' : incident.category.replace('_', ' ')} · urgency {incident.urgency_level}</h2>
+      {silent ? <>
+        <p className="silent-note">
+          {silent.senders_before} people reported from here until {new Date(incident.last_report_at).toLocaleTimeString()},
+          {' '}then nothing for {quietMinutes(incident)} min, while the rest of the city sent {silent.city_reports} reports.
+          {' '}Phones may be dead or the area cut off. Send someone or call to check.
+        </p>
+        <p className="meta">Ward {incident.ward ?? 'unknown'} · status {incident.status}</p>
+        {message && <p className="status" role="status">{message}</p>}
+        {canDecide && (
+          <div className="actions">
+            {incident.status === 'open' && <button className="primary" onClick={() => setStatus('verified')}>Checked: people need help</button>}
+            <button onClick={() => setStatus('resolved')}>Checked: area is fine</button>
+          </div>
+        )}
+        {/* TODO(silent): link to the earlier reports from this cell (urgency.silent.h3). */}
+      </> : <>
       <p className="meta">
         Ward {incident.ward ?? 'unknown'} · status {incident.status} · {incident.report_count} reports from {incident.sender_count} senders
         {incident.headcount !== null && <> · {incident.headcount} people{incident.headcount_conflict && <span className="tag warn">reports disagree</span>}</>}
@@ -124,6 +142,7 @@ export default function IncidentPanel({ id, me, offers, version, onClose, onChan
           </small>
         </blockquote>
       ))}
+      </>}
     </div>
   )
 }
