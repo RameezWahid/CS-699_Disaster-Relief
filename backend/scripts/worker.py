@@ -136,7 +136,9 @@ def process(conn: Connection, inbox_id, source, sender, received_at, payload) ->
         ON CONFLICT (inbox_id) DO NOTHING
         RETURNING id, ward
         """,
-        {"id": inbox_id, "at": received_at, "source": source, "sender": sender,
+        {"id": inbox_id, "at": received_at, "sender": sender,
+         # Reports sent by a logged-in responder count as responder evidence.
+         "source": "responder" if payload.get("responder") else source,
          "text": r["text"], "lang": r["lang"], "simhash": r["simhash"] or 0,
          "repeat_of": find_repeat(conn, received_at, r["simhash"]),
          "gps": r["has_gps"], "photo": bool(payload.get("photo")),

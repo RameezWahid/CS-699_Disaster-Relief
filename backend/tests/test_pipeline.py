@@ -91,7 +91,8 @@ def test_text_only_report_is_geocoded():
     from scripts.config import DATABASE_URL
     from scripts.worker import process
 
-    payload = {"text": "Andheri Subway mein paani bhar gaya, gaadi phasi hai"}
+    # Sent by a logged-in responder, so it also counts as responder evidence.
+    payload = {"text": "Andheri Subway mein paani bhar gaya, gaadi phasi hai", "responder": "r1"}
     with psycopg.connect(DATABASE_URL, autocommit=True) as conn:
         # status 'done' keeps a running worker container from picking the row up.
         inbox_id = conn.execute(
@@ -102,10 +103,12 @@ def test_text_only_report_is_geocoded():
         with conn.transaction():
             process(conn, inbox_id, "replay", "geocode-test", datetime.now(timezone.utc), payload)
 
-        has_gps, source, ward, located = conn.execute(
-            "SELECT has_gps, loc_source, ward, geom IS NOT NULL FROM reports WHERE inbox_id = %s",
+        has_gps, source, ward, located, sent_by = conn.execute(
+            "SELECT has_gps, loc_source, ward, geom IS NOT NULL, source FROM reports "
+            "WHERE inbox_id = %s",
             (inbox_id,),
         ).fetchone()
+        assert sent_by == "responder"
         # No GPS, but the place named in the text gives a point and a ward.
         assert (has_gps, located) == (False, True)
         assert source.startswith("gazetteer:")
@@ -246,6 +249,15 @@ def test_coordinator_flow_login_verify_offer_accept():
         assert client.get(f"/api/incidents/{incident_id}").status_code == 200
         assert client.post(f"/api/incidents/{incident_id}/status",
                            json={"status": "resolved"}).status_code == 403
+
+        # A responder's offline outbox resends the same report: it is queued once, as theirs.
+        field = {"text": "Andheri subway par paani utar gaya", "client_msg_id": f"{run}-field",
+                 "device_id": run}
+        queued = client.post("/api/reports", data=field).json()["inbox_id"]
+        assert client.post("/api/reports", data=field).json() == {"inbox_id": None, "duplicate": True}
+        with psycopg.connect(DATABASE_URL, autocommit=True) as conn:
+            payload = conn.execute("SELECT payload FROM inbox WHERE id = %s", (queued,)).fetchone()[0]
+        assert payload["responder"] == responder
 
         # Resolve it so later runs start a fresh incident here.
         login(client, coordinator)
