@@ -1,0 +1,47 @@
+# S1: extreme cloudburst during the afternoon peak of 26 July 2005 (spec 4.9).
+# Rain: archived Open-Meteo reanalysis scaled to the observed 944 mm at Santacruz (see the
+# fixture's "note"). Places are real gazetteer entries; message text, senders, and offers are
+# synthetic and labelled as such. Ground truth below is what the evaluation scores against.
+id: S1_cloudburst_spring_tide
+start: "2005-07-26T13:00:00+05:30"
+duration_min: 360
+speeds: [1, 10, 60]
+context:
+  rain_fixture: fixtures/rain_s1.json
+incidents:
+  - {id: I01, place: Hindmata, category: rescue, headcount: 6, onset_min: 45,
+     reports: {count: 12, senders: 7, styles: [en, hinglish, mr, mr_latin], with_gps: 0.4}}
+  - {id: I02, place: Milan Subway, category: rescue, headcount: 9, onset_min: 30,
+     reports: {count: 8, senders: 6, styles: [hinglish, en, hi], with_gps: 0.3}}
+  - {id: I03, place: Kurla Station, category: rescue, headcount: 15, onset_min: 90,
+     reports: {count: 10, senders: 8, styles: [hinglish, mr, en], with_gps: 0.2}}
+  - {id: I04, place: Andheri Subway, category: rescue, headcount: 4, onset_min: 60,
+     reports: {count: 5, senders: 4, styles: [en, hinglish], with_gps: 0.5}}
+  - {id: I05, place: Kranti Nagar Kurla, category: rescue, headcount: 20, onset_min: 150,
+     reports: {count: 9, senders: 7, styles: [hi, hinglish, mr], with_gps: 0.1}}
+  - {id: I06, place: Sion, category: medical, headcount: 1, onset_min: 120,
+     reports: {count: 3, senders: 2, styles: [en, hinglish], with_gps: 0.5}}
+  - {id: I07, place: Lalbaug, category: medical, headcount: 2, onset_min: 200,
+     reports: {count: 2, senders: 2, styles: [mr, mr_latin], with_gps: 0.0}}
+  - {id: I08, place: Kala Nagar, category: shelter, headcount: 30, onset_min: 180,
+     reports: {count: 4, senders: 3, styles: [hinglish, hi], with_gps: 0.2}}
+  - {id: I09, place: Chunabhatti, category: food_water, headcount: 40, onset_min: 240,
+     reports: {count: 4, senders: 4, styles: [mr, hinglish], with_gps: 0.0}}
+  - {id: I10, place: Malad Subway, category: road_blocked, headcount: 1, onset_min: 20,
+     reports: {count: 6, senders: 5, styles: [en, hinglish, mr_latin], with_gps: 0.3}}
+  - {id: I11, place: King's Circle, category: road_blocked, headcount: 1, onset_min: 50,
+     reports: {count: 5, senders: 5, styles: [en, hinglish, mr], with_gps: 0.2}}
+  - {id: I12, place: Dahisar Subway, category: rescue, headcount: 5, onset_min: 270,
+     reports: {count: 4, senders: 3, styles: [hinglish, mr_latin], with_gps: 0.3}}
+offers:
+  - {kind: boat, qty: 2, place: Dadar Station, available_from_min: 30, verified: true}
+  - {kind: boat, qty: 2, place: Kurla Station, available_from_min: 60, verified: true}
+  - {kind: boat, qty: 1, place: Bandra Station, available_from_min: 90, verified: false}
+  - {kind: boat, qty: 2, place: Borivali Station, available_from_min: 120, verified: true}
+  - {kind: medical_team, qty: 2, place: Parel, available_from_min: 60, verified: true}
+  - {kind: food, qty: 200, place: Matunga, available_from_min: 150, verified: true}
+  - {kind: shelter_bed, qty: 60, place: Santacruz, available_from_min: 120, verified: false}
+noise:
+  count: 40
+  styles: [en, hinglish, hi, mr, mr_latin]
+  places: [Dadar Station, Bandra Station, Worli, Ghatkopar, Mulund, Borivali Station]
