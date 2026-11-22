@@ -13,3 +13,9 @@ data/raw/
 data/training/
 data/models/
 data/uploads/
+
+# Docker install script
+get-docker.sh
+
+# Offline basemap (large, generated with pmtiles extract)
+data/tiles/
