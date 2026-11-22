@@ -4,15 +4,28 @@ import { api, type Allocation, type Incident, type Me, type Offer } from './api.
 import IncidentPanel from './IncidentPanel.tsx'
 import MapView from './MapView.tsx'
 import OffersPanel from './OffersPanel.tsx'
-import { URGENCY_COLORS } from './urgency.ts'
+import { quietMinutes, URGENCY_COLORS } from './urgency.ts'
 
 type Tab = 'queue' | 'verify' | 'proposals' | 'offers' | 'alerts'
 // Bursts of events (a replay at 60x) collapse into one refetch.
 const REFRESH_DEBOUNCE_MS = 400
 
-// TODO(silent): show category 'silent_zone' as "went quiet, go and check" with its own icon,
-// using urgency.silent (h3, senders_before, city_reports); it has 0 reports and no credibility.
 function IncidentRow({ incident, onSelect }: { incident: Incident; onSelect: () => void }) {
+  // A silent zone has no reports or credibility of its own: say who went quiet and for how long.
+  const silent = incident.urgency.silent
+  if (silent) {
+    return (
+      <button className="row" onClick={onSelect}>
+        <span className="level" style={{ background: URGENCY_COLORS[incident.urgency_level - 1] }}>{incident.urgency_level}</span>
+        <span className="row-main">
+          <span><strong>went quiet</strong><span className="tag silent">go and check</span></span>
+          <small>
+            ward {incident.ward ?? '?'} · {silent.senders_before} people reported, then nothing for {quietMinutes(incident)} min
+          </small>
+        </span>
+      </button>
+    )
+  }
   return (
     <button className="row" onClick={onSelect}>
       <span className="level" style={{ background: URGENCY_COLORS[incident.urgency_level - 1] }}>{incident.urgency_level}</span>

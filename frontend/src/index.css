@@ -62,6 +62,8 @@ button.link { border: none !important; background: none !important; color: var(-
 .tag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 4px; font-size: 11px; background: #e2e8f0; color: #334155; vertical-align: middle; }
 .tag.ok { background: #dcfce7; color: #166534; }
 .tag.warn { background: #dbeafe; color: #1e40af; }
+.tag.silent { background: #ede9fe; color: #5b21b6; }
+.silent-note { padding: 8px 10px; border-left: 4px solid #7c3aed; background: #f5f3ff; }
 .actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
 .error { color: #b91c1c; margin: 6px 12px; font-size: 14px; }
 .incident h2 { font-size: 18px; margin: 8px 0 4px; }
@@ -119,4 +121,6 @@ blockquote small { color: var(--muted); }
   .waiting { background: #422006; }
   .rejected { background: #450a0a; }
   .task { border-color: #444; }
+  .tag.silent { background: #2e1065; color: #ddd6fe; }
+  .silent-note { background: #1e1b4b; }
 }
