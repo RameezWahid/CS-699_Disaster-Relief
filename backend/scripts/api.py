@@ -50,6 +50,7 @@ def log_event(conn, kind: str, ward: str | None, payload: dict) -> None:
 
 @app.post("/api/reports", status_code=202)
 def create_report(
+    request: Request,
     client_msg_id: Annotated[str, Form(max_length=64)],
     device_id: Annotated[str, Form(max_length=64)],
     text: Annotated[str, Form(max_length=2000)] = "",
@@ -65,8 +66,14 @@ def create_report(
     sender = sender_hash("web", device_id)
     payload = {"text": text, "category_hint": category_hint, "lat": lat, "lon": lon,
                "accuracy_m": accuracy_m}
+    # A logged-in staff member in the field is a responder: a credibility signal. Their phone
+    # may sync a whole offline outbox at once, so the citizen rate limit does not apply.
+    try:
+        payload["responder"] = current_user(request)["username"]
+    except HTTPException:
+        pass
     with db() as conn:
-        if rate_limited(conn, sender):
+        if "responder" not in payload and rate_limited(conn, sender):
             raise HTTPException(429, "too many reports from this device, please wait")
         # A retried submission (same client_msg_id) is stored once.
         inbox_id = enqueue(conn, "web", f"{sender[:16]}:{client_msg_id}", sender, payload)
