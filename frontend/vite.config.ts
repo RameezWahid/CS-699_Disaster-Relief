@@ -3,9 +3,6 @@ import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
-  plugins: [react()],
-  // In development, send API calls to the backend (nginx does this in the container).
-  server: { proxy: { '/api': 'http://localhost:8000' } },
   plugins: [
     react(),
     // Offline responder app (spec 4.7, demo scope): the app shell is precached, the Mumbai
@@ -45,6 +42,7 @@ export default defineConfig({
   ],
   // MapLibre starts its worker with { type: 'module' }.
   worker: { format: 'es' },
+  // In development, send API calls to the backend (nginx does this in the container).
   server: {
     proxy: { '/api': 'http://localhost:8000' },
   },
