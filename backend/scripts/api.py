@@ -324,6 +324,14 @@ def decide(allocation_id: int, action: Literal["accept", "cancel"], user: User) 
 # TODO(events): GET /api/events, live updates over SSE. The dashboard refreshes every 60 s.
 
 
+# ---------------------------------------------------------------- responder app
+
+# GET /api/tasks and POST /api/sync for the offline responder app (scripts/responder.py).
+from scripts.responder import router as responder_router  # noqa: E402
+
+app.include_router(responder_router)
+
+
 # ---------------------------------------------------------------- command line
 
 def add_user(argv: list[str]) -> None:

@@ -138,6 +138,42 @@ def cancel(conn: Connection, allocation_id: int) -> bool:
     return row is not None
 
 
+# Kinds that come back after delivery (a boat returns; food does not).
+REUSABLE_KINDS = {"boat", "medical_team"}
+
+
+def dispatch(conn: Connection, allocation_id: int) -> bool:
+    # The responder has set off with an accepted allocation.
+    return (
+        conn.execute(
+            "UPDATE allocations SET status = 'dispatched', updated_at = now() "
+            "WHERE id = %s AND status = 'accepted'",
+            (allocation_id,),
+        ).rowcount
+        == 1
+    )
+
+
+def deliver(conn: Connection, allocation_id: int) -> bool:
+    # Delivered. A reusable resource is available again for the next need.
+    with conn.transaction():
+        row = conn.execute(
+            """
+            UPDATE allocations a SET status = 'delivered', updated_at = now()
+              FROM offers o
+             WHERE a.id = %s AND a.status = 'dispatched' AND o.id = a.offer_id
+            RETURNING a.offer_id, a.qty, o.kind
+            """,
+            (allocation_id,),
+        ).fetchone()
+        if row and row[2] in REUSABLE_KINDS:
+            conn.execute(
+                "UPDATE offers SET qty_available = qty_available + %s WHERE id = %s",
+                (row[1], row[0]),
+            )
+    return row is not None
+
+
 def expire_proposals(conn: Connection) -> int:
     expired = 0
 
