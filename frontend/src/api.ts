@@ -13,7 +13,7 @@ export interface Urgency {
   base_level: number
   level: number
   override: string | null
-  // Set only on silent-zone incidents, which have no reports and no factors.
+  // Set on silent-zone incidents: the cell that went quiet and how busy it was before.
   silent?: { h3: string; senders_before: number; city_reports: number }
 }
 

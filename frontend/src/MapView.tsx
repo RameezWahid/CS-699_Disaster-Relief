@@ -11,7 +11,7 @@ import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&ur
 import { Protocol } from 'pmtiles'
 import { useEffect, useRef, useState } from 'react'
 import type { Incident, Offer } from './api.ts'
-import { SILENT_RING, URGENCY_COLORS } from './urgency.ts'
+import { URGENCY_COLORS } from './urgency.ts'
 
 // BMC extent (same box as backend config.MUMBAI_BBOX).
 const MUMBAI_BOUNDS: [[number, number], [number, number]] = [[72.77, 18.89], [72.99, 19.28]]
@@ -47,10 +47,7 @@ function incidentFeatures(incidents: Incident[]): FeatureCollection<Point> {
       type: 'Feature',
       id: i.id,
       geometry: { type: 'Point', coordinates: [i.lon!, i.lat!] },
-      properties: {
-        id: i.id, urgency_level: i.urgency_level, silent: Boolean(i.urgency.silent),
-        verify: i.credibility < 0.5 && i.status === 'open',
-      },
+      properties: { id: i.id, urgency_level: i.urgency_level, verify: i.credibility < 0.5 && i.status === 'open' },
     }))
   return { type: 'FeatureCollection', features }
 }
@@ -144,9 +141,8 @@ export default function MapView({ incidents, offers, myWards, selectedId, onSele
           'circle-radius': ['interpolate', ['linear'], ['get', 'urgency_level'], 1, 5, 5, 10],
           'circle-color': ['step', ['get', 'urgency_level'], URGENCY_COLORS[0],
             2, URGENCY_COLORS[1], 3, URGENCY_COLORS[2], 4, URGENCY_COLORS[3], 5, URGENCY_COLORS[4]],
-          // Silent zones get a thick violet ring; unverified incidents a blue one.
-          'circle-stroke-color': ['case', ['get', 'silent'], SILENT_RING, ['get', 'verify'], VERIFY_RING, '#ffffff'],
-          'circle-stroke-width': ['case', ['get', 'silent'], 5, ['get', 'verify'], 3, 1.5],
+          'circle-stroke-color': ['case', ['get', 'verify'], VERIFY_RING, '#ffffff'],
+          'circle-stroke-width': ['case', ['get', 'verify'], 3, 1.5],
         },
       })
       map.addSource('selected', { type: 'geojson', data: EMPTY })

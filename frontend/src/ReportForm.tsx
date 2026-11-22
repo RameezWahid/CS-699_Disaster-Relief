@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 
 const CATEGORIES: [string, string][] = [
   ['rescue', 'Trapped / rescue'],
@@ -34,76 +34,12 @@ async function compressPhoto(file: File): Promise<Blob> {
 
 type Position = { lat: number; lon: number; accuracy: number }
 
-// Offline outbox: every report is saved on the phone first and deleted only once the server has
-// it. Retries reuse the same client_msg_id, and the server stores a repeated id once, so each
-// report arrives exactly once however often the network drops.
-// TODO(pwa): manifest + service worker so the app itself opens offline, and Background Sync
-// so the outbox is sent even when the page is closed. Until then it is sent when this page is
-// open and the phone comes back online.
-type Queued = { id: string; queuedAt: number; fields: Record<string, string>; photo?: Blob }
-
-function outbox<T>(mode: IDBTransactionMode, action: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const open = indexedDB.open('relief', 1)
-    open.onupgradeneeded = () => open.result.createObjectStore('outbox', { keyPath: 'id' })
-    open.onerror = () => reject(open.error)
-    open.onsuccess = () => {
-      const request = action(open.result.transaction('outbox', mode).objectStore('outbox'))
-      request.onsuccess = () => resolve(request.result)
-      request.onerror = () => reject(request.error)
-    }
-  })
-}
-
-let flushing: Promise<string> | null = null
-
-// Send queued reports oldest first. Returns a status line for the form.
-function flushOutbox(): Promise<string> {
-  flushing ??= (async () => {
-    const queued = (await outbox<Queued[]>('readonly', (s) => s.getAll())).sort((a, b) => a.queuedAt - b.queuedAt)
-    let sent = 0
-    for (const item of queued) {
-      const form = new FormData()
-      for (const [key, value] of Object.entries(item.fields)) form.append(key, value)
-      if (item.photo) form.append('photo', item.photo, 'photo.jpg')
-      let response: Response
-      try {
-        response = await fetch('/api/reports', { method: 'POST', body: form })
-      } catch {
-        break // offline: keep the rest for later
-      }
-      // Busy or rate limited: try again later. Accepted or a duplicate: the server has it.
-      if (response.status === 429 || response.status >= 500) break
-      await outbox('readwrite', (s) => s.delete(item.id))
-      if (response.ok) {
-        sent += 1
-      } else {
-        // The server will never accept this one (e.g. invalid), so do not retry it forever.
-        const body = await response.json().catch(() => ({}))
-        return `Report dropped: ${body.detail ?? response.statusText}`
-      }
-    }
-    const waiting = await outbox<number>('readonly', (s) => s.count())
-    if (waiting) return `Saved on this phone. ${waiting} report(s) will be sent when you are back online.`
-    return sent ? 'Report received. Coordinators can now see it.' : ''
-  })().finally(() => { flushing = null })
-  return flushing
-}
-
 export default function ReportForm() {
   const [text, setText] = useState('')
   const [category, setCategory] = useState<string | null>(null)
   const [position, setPosition] = useState<Position | null>(null)
   const [photo, setPhoto] = useState<File | null>(null)
   const [status, setStatus] = useState('')
-
-  // Send anything left over from an earlier offline session, and again whenever the network returns.
-  useEffect(() => {
-    const send = () => { flushOutbox().then((s) => s && setStatus(s), () => {}) }
-    send()
-    window.addEventListener('online', send)
-    return () => window.removeEventListener('online', send)
-  }, [])
 
   function locate() {
     setStatus('Finding your location…')
@@ -119,23 +55,29 @@ export default function ReportForm() {
 
   async function submit(event: FormEvent) {
     event.preventDefault()
-    const fields: Record<string, string> = { client_msg_id: crypto.randomUUID(), device_id: deviceId(), text }
-    if (category) fields.category_hint = category
+    const form = new FormData()
+    form.append('client_msg_id', crypto.randomUUID())
+    form.append('device_id', deviceId())
+    form.append('text', text)
+    if (category) form.append('category_hint', category)
     if (position) {
-      fields.lat = String(position.lat)
-      fields.lon = String(position.lon)
-      fields.accuracy_m = String(position.accuracy)
+      form.append('lat', String(position.lat))
+      form.append('lon', String(position.lon))
+      form.append('accuracy_m', String(position.accuracy))
     }
-    const item: Queued = { id: fields.client_msg_id, queuedAt: Date.now(), fields }
-    if (photo) item.photo = await compressPhoto(photo)
-    // Save first, then send: a report is never lost if the network drops mid-request.
-    await outbox('readwrite', (s) => s.put(item))
-    setText('')
-    setCategory(null)
-    setPhoto(null)
-    setPosition(null)
+    if (photo) form.append('photo', await compressPhoto(photo), 'photo.jpg')
     setStatus('Sending…')
-    setStatus(await flushOutbox())
+    const response = await fetch('/api/reports', { method: 'POST', body: form })
+    if (response.ok) {
+      setText('')
+      setCategory(null)
+      setPhoto(null)
+      setPosition(null)
+      setStatus('Report received. Coordinators can now see it.')
+    } else {
+      const body = await response.json().catch(() => ({}))
+      setStatus(`Not sent: ${body.detail ?? response.statusText}`)
+    }
   }
 
   const tone = /^(Report dropped|Could not)/.test(status) ? 'error'

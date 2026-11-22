@@ -4,28 +4,13 @@ import { api, type Allocation, type Incident, type Me, type Offer } from './api.
 import IncidentPanel from './IncidentPanel.tsx'
 import MapView from './MapView.tsx'
 import OffersPanel from './OffersPanel.tsx'
-import { quietMinutes, URGENCY_COLORS } from './urgency.ts'
+import { URGENCY_COLORS } from './urgency.ts'
 
 type Tab = 'queue' | 'verify' | 'proposals' | 'offers' | 'alerts'
 // Bursts of events (a replay at 60x) collapse into one refetch.
 const REFRESH_DEBOUNCE_MS = 400
 
 function IncidentRow({ incident, onSelect }: { incident: Incident; onSelect: () => void }) {
-  // A silent zone has no reports or credibility of its own: say who went quiet and for how long.
-  const silent = incident.urgency.silent
-  if (silent) {
-    return (
-      <button className="row" onClick={onSelect}>
-        <span className="level" style={{ background: URGENCY_COLORS[incident.urgency_level - 1] }}>{incident.urgency_level}</span>
-        <span className="row-main">
-          <span><strong>went quiet</strong><span className="tag silent">go and check</span></span>
-          <small>
-            ward {incident.ward ?? '?'} · {silent.senders_before} people reported, then nothing for {quietMinutes(incident)} min
-          </small>
-        </span>
-      </button>
-    )
-  }
   return (
     <button className="row" onClick={onSelect}>
       <span className="level" style={{ background: URGENCY_COLORS[incident.urgency_level - 1] }}>{incident.urgency_level}</span>
@@ -34,6 +19,7 @@ function IncidentRow({ incident, onSelect }: { incident: Incident; onSelect: () 
           <strong>{incident.category.replace('_', ' ')}</strong>
           {incident.headcount !== null && ` · ${incident.headcount} people`}
           {incident.urgency.override && <span className="tag">{incident.urgency.override}</span>}
+          {incident.urgency.silent && <span className="tag warn">went quiet: go and check</span>}
         </span>
         <small>
           ward {incident.ward ?? '?'} · {incident.report_count} report{incident.report_count > 1 ? 's' : ''} ·
