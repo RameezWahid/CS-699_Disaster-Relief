@@ -138,39 +138,71 @@ export default function ReportForm() {
     setStatus(await flushOutbox())
   }
 
+  const tone = /^(Report dropped|Could not)/.test(status) ? 'error'
+    : status.startsWith('Report received') ? 'success' : 'info'
+
   return (
-    <form className="report-form" onSubmit={submit}>
-      <h1>Report flooding</h1>
-      <p className="hint">English, हिंदी, मराठी, or Hinglish. Say where, how many people, and what is needed.</p>
-      <button type="button" onClick={locate} className="locate">
-        {position ? `📍 Location set (±${Math.round(position.accuracy)} m)` : '📍 Use my location'}
-      </button>
-      <textarea
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        rows={5}
-        maxLength={2000}
-        placeholder="e.g. Hindmata ke paas 5 log phase hain, ek baccha bhi hai"
-      />
-      <div className="chips" role="group" aria-label="Category">
-        {CATEGORIES.map(([value, label]) => (
-          <button
-            type="button"
-            key={value}
-            aria-pressed={category === value}
-            onClick={() => setCategory(category === value ? null : value)}
-          >
-            {label}
+    <div className="page">
+      <form className="card report-form" onSubmit={submit}>
+        <header className="card-head">
+          <h1>Report flooding</h1>
+          <p className="hint">English, हिंदी, मराठी, or Hinglish. Say where, how many people, and what is needed.</p>
+        </header>
+
+        <div className="field">
+          <span className="field-label"><b>1</b> Where are you?</span>
+          <button type="button" onClick={locate} className={`locate${position ? ' set' : ''}`}>
+            {position ? `📍 Location set (±${Math.round(position.accuracy)} m)` : '📍 Use my location'}
           </button>
-        ))}
-      </div>
-      <label className="photo">
-        Photo (optional)
-        <input type="file" accept="image/*" capture="environment"
-          onChange={(e) => setPhoto(e.target.files?.[0] ?? null)} />
-      </label>
-      <button type="submit" className="send" disabled={!text.trim() && !position}>Send report</button>
-      {status && <p className="status" role="status">{status}</p>}
-    </form>
+        </div>
+
+        <label className="field">
+          <span className="field-label"><b>2</b> What is happening?</span>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            rows={5}
+            maxLength={2000}
+            placeholder="e.g. Hindmata ke paas 5 log phase hain, ek baccha bhi hai"
+          />
+          <small className="count">{text.length} / 2000</small>
+        </label>
+
+        <div className="field">
+          <span className="field-label" id="category-label"><b>3</b> What is needed? <em>optional</em></span>
+          <div className="chips" role="group" aria-labelledby="category-label">
+            {CATEGORIES.map(([value, label]) => (
+              <button
+                type="button"
+                key={value}
+                aria-pressed={category === value}
+                onClick={() => setCategory(category === value ? null : value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="field">
+          <span className="field-label"><b>4</b> Photo <em>optional</em></span>
+          {photo ? (
+            <div className="photo-picked">
+              <span>🖼️ {photo.name}</span>
+              <button type="button" className="link" onClick={() => setPhoto(null)}>Remove</button>
+            </div>
+          ) : (
+            <label className="photo-drop">
+              <input type="file" accept="image/*" capture="environment"
+                onChange={(e) => setPhoto(e.target.files?.[0] ?? null)} />
+              📷 Take or choose a photo
+            </label>
+          )}
+        </div>
+
+        <button type="submit" className="btn btn-primary btn-block" disabled={!text.trim() && !position}>Send report</button>
+        {status && <p className={`notice ${tone}`} role="status">{status}</p>}
+      </form>
+    </div>
   )
 }

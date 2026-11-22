@@ -162,64 +162,80 @@ export default function Responder({ me }: { me: Me }) {
         : !online || syncState === 'offline' ? 'Offline: actions are saved on this phone'
           : 'Online and synced'
 
+  const connected = online && syncState !== 'offline' && syncState !== 'login'
+  const open = tasks.filter((t) => t.status !== 'delivered').length
+
   return (
-    <section className="responder">
-      <header className="responder-head">
-        <span className={`dot ${online && syncState !== 'offline' ? 'on' : 'off'}`} aria-hidden />
-        <strong data-testid="sync-status">{statusLine}</strong>
-        <span>{me.username} · wards {me.wards.join(', ') || 'all'}</span>
+    <section className="page responder">
+      <header className={`card sync-card ${syncState === 'syncing' ? 'busy' : connected ? 'on' : 'off'}`}>
+        <span className="dot" aria-hidden />
+        <div className="sync-text">
+          <strong data-testid="sync-status">{statusLine}</strong>
+          <small>{me.username} · wards {me.wards.join(', ') || 'all'}</small>
+        </div>
       </header>
+
       {waiting > 0 && (
-        <p className="waiting" data-testid="waiting">
-          {waiting} action{waiting === 1 ? '' : 's'} waiting to sync
-          {online && <button onClick={sync}>Sync now</button>}
-        </p>
+        <div className="notice warn waiting" data-testid="waiting">
+          <span>{waiting} action{waiting === 1 ? '' : 's'} waiting to sync</span>
+          {online && <button className="btn btn-sm" onClick={sync}>Sync now</button>}
+        </div>
       )}
       {problems.length > 0 && (
-        <div className="rejected" role="alert">
+        <div className="notice error rejected" role="alert">
           {problems.map((p) => (
             <p key={p.client_action_id}><strong>{p.label}</strong> was not applied: {p.reason}</p>
           ))}
-          <button onClick={() => { clearRejected(); refreshCounts() }}>Dismiss</button>
+          <button className="btn btn-sm" onClick={() => { clearRejected(); refreshCounts() }}>Dismiss</button>
         </div>
       )}
 
-      <h2>My tasks ({tasks.filter((t) => t.status !== 'delivered').length})</h2>
-      {tasks.length === 0 && <p>No tasks assigned in your wards.</p>}
+      <h2 className="section-title">My tasks <span className="badge">{open}</span></h2>
+      {tasks.length === 0 && <p className="empty">No tasks assigned in your wards.</p>}
       <ul className="tasks">
         {tasks.map((task) => (
-          <li key={task.id} className={`task level-${task.urgency_level}`}>
-            <div>
-              <strong>{task.qty} × {task.kind}</strong> from {task.provider}
-              <br />
-              Incident {task.incident_id} · {task.category} · ward {task.ward ?? '?'} · urgency {task.urgency_level}
-              {task.headcount ? ` · ${task.headcount} people` : ''}
+          <li key={task.id} className={`task level-${task.urgency_level} ${task.status}`}>
+            <div className="task-main">
+              <div className="task-title">
+                <span className="urgency">U{task.urgency_level}</span>
+                <strong>{task.qty} × {task.kind}</strong>
+                <span className="task-status">{task.status}</span>
+              </div>
+              <p className="task-meta">
+                From {task.provider} · Incident {task.incident_id} · {task.category.replace('_', ' ')} · ward {task.ward ?? '?'}
+                {task.headcount ? ` · ${task.headcount} people` : ''}
+              </p>
               {task.lat != null && task.lon != null && (
-                <> · <a href={`geo:${task.lat},${task.lon}`}>open in maps</a></>
+                <a className="maps-link" href={`geo:${task.lat},${task.lon}`}>📍 Open in maps</a>
               )}
             </div>
-            <div className="task-actions">
-              <span className="task-status">{task.status}</span>
-              {task.status !== 'delivered' && (
-                <button onClick={() => advance(task)}>{NEXT_STEP[task.status][1]}</button>
-              )}
-            </div>
+            {task.status !== 'delivered' && (
+              <button className="btn btn-primary task-btn" onClick={() => advance(task)}>{NEXT_STEP[task.status][1]}</button>
+            )}
           </li>
         ))}
       </ul>
 
-      <h2>Report from the field</h2>
-      <form onSubmit={report} className="field-report">
-        <select value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Category">
-          {REPORT_CATEGORIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-        </select>
-        <textarea value={text} onChange={(e) => setText(e.target.value)} rows={3}
-          placeholder="What and where, e.g. Road blocked by a fallen tree near Hindmata" />
-        <div>
-          <button type="button" onClick={locate}>{position ? 'Location added ✓' : 'Add my location'}</button>
-          <button type="submit">Send report</button>
+      <h2 className="section-title">Report from the field</h2>
+      <form onSubmit={report} className="card field-report">
+        <label className="field">
+          <span className="field-label">Category</span>
+          <select value={category} onChange={(e) => setCategory(e.target.value)}>
+            {REPORT_CATEGORIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+        </label>
+        <label className="field">
+          <span className="field-label">Details</span>
+          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={3}
+            placeholder="What and where, e.g. Road blocked by a fallen tree near Hindmata" />
+        </label>
+        <div className="btn-row">
+          <button type="button" className={`btn locate${position ? ' set' : ''}`} onClick={locate}>
+            {position ? '📍 Location added ✓' : '📍 Add my location'}
+          </button>
+          <button type="submit" className="btn btn-primary">Send report</button>
         </div>
-        {note && <p className="status" role="status">{note}</p>}
+        {note && <p className={`notice ${note.startsWith('No location') ? 'error' : 'info'}`} role="status">{note}</p>}
       </form>
     </section>
   )
