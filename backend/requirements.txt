@@ -1,4 +1,4 @@
-# Runtime dependencies for the api, worker, setup and bot containers (Python 3.12).
+# Runtime dependencies for the api, worker and setup containers (Python 3.12).
 fastapi==0.115.12
 uvicorn[standard]==0.34.2
 python-multipart==0.0.20
@@ -11,5 +11,7 @@ numpy==2.2.6
 rapidfuzz==3.13.0
 onnxruntime==1.22.0
 tokenizers==0.21.1
+# Reads the OpenStreetMap extract for the place list (setup only).
+osmium==4.0.2
 # Scenario files for replay and the evaluation harness.
 pyyaml==6.0.3
