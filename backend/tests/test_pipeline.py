@@ -81,6 +81,36 @@ def test_report_becomes_incident_with_needs():
         assert set(urgency) >= {"S", "factors", "level", "override"}
 
 
+
+def test_text_only_report_is_geocoded():
+    import json
+    from datetime import datetime, timezone
+
+    import psycopg
+
+    from scripts.config import DATABASE_URL
+    from scripts.worker import process
+
+    payload = {"text": "Andheri Subway mein paani bhar gaya, gaadi phasi hai"}
+    with psycopg.connect(DATABASE_URL, autocommit=True) as conn:
+        # status 'done' keeps a running worker container from picking the row up.
+        inbox_id = conn.execute(
+            "INSERT INTO inbox (source, source_msg_id, sender_hash, payload, status) "
+            "VALUES ('replay', %s, %s, %s, 'done') RETURNING id",
+            (str(uuid.uuid4()), str(uuid.uuid4()), json.dumps(payload)),
+        ).fetchone()[0]
+        with conn.transaction():
+            process(conn, inbox_id, "replay", "geocode-test", datetime.now(timezone.utc), payload)
+
+        has_gps, source, ward, located = conn.execute(
+            "SELECT has_gps, loc_source, ward, geom IS NOT NULL FROM reports WHERE inbox_id = %s",
+            (inbox_id,),
+        ).fetchone()
+        # No GPS, but the place named in the text gives a point and a ward.
+        assert (has_gps, located) == (False, True)
+        assert source.startswith("gazetteer:")
+        assert ward is not None
+
 def test_silent_zone_found_once():
     from datetime import datetime, timedelta, timezone
 
