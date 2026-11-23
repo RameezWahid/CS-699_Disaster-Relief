@@ -8,8 +8,8 @@ from scripts.classifier import load_classifier
 from scripts.config import DATABASE_URL
 from scripts.extract import extract
 from scripts.geocode import geocode
-from scripts.incidents import attach_report, detect_silent_zones
-from scripts.matching import upsert_needs
+from scripts.incidents import attach_report, detect_silent_zones, merge_drifted, refresh_active
+from scripts.matching import expire_proposals, propose, upsert_needs
 from scripts.text import normalize, simhash, tag_language, tokens
 from scripts.triage import CATEGORY_SEVERITY, urgency
 
@@ -19,8 +19,12 @@ MAX_ATTEMPTS = 3
 # Poll periodically in case a notification is missed.
 IDLE_POLL_S = 5
 
-# Look for cells that went quiet this often, even while messages keep arriving.
-SILENT_CHECK_S = 60
+# Run the jobs that do not depend on a new report this often, even while messages keep
+# arriving. During a replay they follow scenario minutes (a 60x replay runs them every second).
+MINUTE_JOBS_S = 60
+MIN_MINUTE_JOBS_S = 1
+# Session-level advisory lock key, so only one worker runs the minute jobs at a time.
+MINUTE_JOBS_LOCK = 4201
 
 # A report within this many SimHash bits of a recent report is a near copy of it.
 # Reports are short, so one changed word ("mein" -> "me") moves about 5 bits, while
@@ -30,6 +34,10 @@ REPEAT_WINDOW_MIN = 60
 
 # A category picked by the citizen counts for less than a rule match.
 HINT_CATEGORY_P = 0.5
+
+# A guessed category or a weak place match also goes to human review.
+MIN_CATEGORY_P = 0.5
+MIN_LOCATION_CONFIDENCE = 0.5
 
 log = logging.getLogger("worker")
 
@@ -147,9 +155,11 @@ def process(conn: Connection, inbox_id, source, sender, received_at, payload) ->
          "lat": r["lat"], "lon": r["lon"], "uncertainty": loc["uncertainty_m"],
          "confidence": loc["confidence"], "loc_source": loc["source"],
          "urgency": r["urgency"]["level"],
-         # Coordinators check reports with no location, an ambiguous place match,
-         # or no recognisable category.
-         "review": r["lat"] is None or loc["ambiguous"] or r["category"] == "info_noise",
+         # Coordinators check reports with no location, an ambiguous or weak place match,
+         # or no recognisable or only a guessed category.
+         "review": r["lat"] is None or loc["ambiguous"] or r["category"] == "info_noise"
+                   or r["category_p"] < MIN_CATEGORY_P
+                   or loc["confidence"] < MIN_LOCATION_CONFIDENCE,
          "extraction": json.dumps(r, ensure_ascii=False)},
     ).fetchone()
 
@@ -200,6 +210,24 @@ def claim_and_process(conn: Connection) -> bool:
     return True
 
 
+def run_minute_jobs(conn: Connection) -> None:
+    """Work that does not depend on a new report. Only one worker runs this at a time."""
+    if not conn.execute("SELECT pg_try_advisory_lock(%s)", (MINUTE_JOBS_LOCK,)).fetchone()[0]:
+        return
+    try:
+        merge_drifted(conn)
+        # Urgency grows with waiting time.
+        refresh_active(conn)
+        for zone in detect_silent_zones(conn):
+            log.warning("silent zone: %s", zone)
+        # Return stock from proposals nobody accepted, then propose again.
+        expire_proposals(conn)
+        with conn.transaction():
+            propose(conn)
+    finally:
+        conn.execute("SELECT pg_advisory_unlock(%s)", (MINUTE_JOBS_LOCK,))
+
+
 def run() -> None:
     log.info("worker starting")
 
@@ -209,18 +237,12 @@ def run() -> None:
         # PostgreSQL sends notifications when new inbox rows arrive.
         listener.execute("LISTEN inbox")
 
-        # TODO(periodic): every ~30 s between messages, run the work that does not depend on a
-        # new report: incidents.refresh_active() (urgency grows with waiting time), then
-        # matching.expire_proposals() and matching.propose(). Until then nothing creates
-        # proposals or returns stock from expired ones.
-        # TODO(later): DBSCAN merging of incidents that drift together, rainfall from
-        # Open-Meteo and official alerts as credibility signals.
-        next_silent_check = 0.0
+        next_jobs = 0.0
         while True:
-            if time.monotonic() >= next_silent_check:
-                for zone in detect_silent_zones(conn):
-                    log.warning("silent zone: %s", zone)
-                next_silent_check = time.monotonic() + SILENT_CHECK_S
+            if time.monotonic() >= next_jobs:
+                run_minute_jobs(conn)
+                speed = conn.execute("SELECT coalesce((SELECT speed FROM sim_clock), 1)").fetchone()[0]
+                next_jobs = time.monotonic() + max(MINUTE_JOBS_S / speed, MIN_MINUTE_JOBS_S)
 
             # Drain available work before waiting for another notification.
             if not claim_and_process(conn):

@@ -1,9 +1,12 @@
 """Group reports into incidents. One active incident per area/category group."""
 
 import json
-from datetime import datetime, timezone
+import logging
+from datetime import datetime
 
 from psycopg import Connection
+
+from scripts.matching import merge_needs
 
 # Unknown classifier labels fall back to "info".
 from scripts.triage import (
@@ -27,20 +30,30 @@ SILENT_BEFORE_MIN = 120  # ... after reports in the window just before it
 SILENT_MIN_SENDERS = 3  # from this many people, so one sender stopping is not silence
 SILENT_MIN_CITY_REPORTS = 10  # and the city still sent this many reports while the cell was quiet
 
+log = logging.getLogger("incidents")
+
 
 def assign_incident(conn: Connection, report_id: int) -> tuple[int, bool]:
     """Reuse a nearby active incident or create one."""
     # Keep incident assignment serialized. Two workers must not create the same incident.
     conn.execute("SELECT pg_advisory_xact_lock(%s)", (INCIDENT_LOCK,))
 
-    category, received_at, located = conn.execute(
-        "SELECT category, received_at, geom IS NOT NULL FROM reports WHERE id = %s", (report_id,)
+    category, received_at, located, repeat_incident = conn.execute(
+        """
+        SELECT r.category, r.received_at, r.geom IS NOT NULL,
+               (SELECT o.incident_id FROM reports o JOIN incidents i ON i.id = o.incident_id
+                 WHERE o.id = r.repeat_of AND i.status IN ('open', 'verified'))
+          FROM reports r WHERE r.id = %s
+        """, (report_id,)
     ).fetchone()
     group = CATEGORY_GROUP.get(category, "info")
     row = None
 
+    if repeat_incident is not None:
+        # A forwarded copy belongs with the report it copies, wherever it says it is.
+        row = (repeat_incident,)
     # No coordinates means no spatial match. Do not guess where the report belongs.
-    if located:
+    elif located:
         row = conn.execute(
             """
             SELECT i.id FROM incidents i, reports r
@@ -118,7 +131,11 @@ def refresh_triage(conn: Connection, incident_id: int) -> dict | None:
                EXISTS (SELECT 1 FROM places p
                         WHERE p.kind = 'chronic_spot' AND i.geom IS NOT NULL
                           AND ST_DWithin(p.geom::geography, i.geom::geography, %(spot_m)s)),
-               extract(epoch FROM now() - i.first_report_at) / 60
+               extract(epoch FROM app_now() - i.first_report_at) / 60,
+               -- An official alert for this ward (or the city) while reports were coming in.
+               EXISTS (SELECT 1 FROM alerts a
+                        WHERE (a.ward IS NULL OR a.ward = i.ward)
+                          AND i.last_report_at BETWEEN a.starts_at AND a.ends_at)
           FROM incidents i JOIN reports r ON r.incident_id = i.id
          WHERE i.id = %(id)s
          GROUP BY i.id
@@ -128,13 +145,13 @@ def refresh_triage(conn: Connection, incident_id: int) -> dict | None:
     if row is None:
         return None
     (headcount, status, old_level, old_verify, categories, senders, gps, photo, responder,
-     vulnerable, override, chronic_spot, waited_min) = row
+     vulnerable, override, chronic_spot, waited_min, official_alert) = row
 
     # The most severe category among the reports speaks for the incident.
     category = max(categories, key=lambda c: CATEGORY_SEVERITY.get(c, 0))
     u = urgency(category, headcount, vulnerable, float(waited_min), override)
-    # Rainfall and official alerts have no data source yet, so those signals stay off.
-    c = credibility(senders, gps, photo, False, chronic_spot, False, responder)
+    # TODO(rain): heavy rain nearby (Open-Meteo) as a credibility signal. Until then it stays off.
+    c = credibility(senders, gps, photo, False, chronic_spot, official_alert, responder)
     # Coordinators check low-credibility incidents. Urgency 5 is acted on while being checked.
     needs_verification = status == "open" and c["R"] < VERIFY_BELOW_CREDIBILITY
     fast_track = u["level"] == 5
@@ -177,7 +194,8 @@ def detect_silent_zones(conn: Connection, at: datetime | None = None) -> list[di
     A silent zone goes to the verification queue as a "go and check" task, at the highest
     urgency its earlier reports had. It has no reports, so it never gets needs or proposals.
     """
-    at = at or datetime.now(timezone.utc)
+    # Times follow the app clock, so a replay finds silence in scenario time.
+    at = at or conn.execute("SELECT app_now()").fetchone()[0]
     with conn.transaction():
         # Same lock as assign_incident, so two workers cannot open the same silent zone.
         conn.execute("SELECT pg_advisory_xact_lock(%s)", (INCIDENT_LOCK,))
@@ -231,6 +249,53 @@ def detect_silent_zones(conn: Connection, at: datetime | None = None) -> list[di
     # then a coordinator resolves it. Later, expect a rate from rainfall and past events instead
     # of requiring earlier reports, so areas that were never able to report are found too.
     return created
+
+
+def merge_drifted(conn: Connection) -> list[dict]:
+    """Merge active incidents that have drifted within JOIN_RADIUS_M of each other.
+
+    DBSCAN runs on points projected to UTM 43N (EPSG:32643) so eps is in metres. The oldest
+    incident in each cluster survives; the others are marked merged into it.
+    """
+    clusters = conn.execute(
+        """
+        SELECT array_agg(id ORDER BY id) FROM (
+            SELECT id, category_group,
+                   ST_ClusterDBSCAN(ST_Transform(geom, 32643), eps := %(eps)s, minpoints := 1)
+                       OVER (PARTITION BY category_group) AS cluster
+              FROM incidents
+             WHERE status IN ('open', 'verified') AND geom IS NOT NULL
+               AND category <> 'silent_zone'
+               AND last_report_at > app_now() - make_interval(mins => %(window)s)
+        ) clustered
+         GROUP BY category_group, cluster HAVING count(*) > 1
+        """,
+        {"eps": JOIN_RADIUS_M, "window": ACTIVE_WINDOW_MIN},
+    ).fetchall()
+    merged = []
+    for (ids,) in clusters:
+        with conn.transaction():
+            # Same lock as assign_incident, so a new report cannot join an incident mid-merge.
+            conn.execute("SELECT pg_advisory_xact_lock(%s)", (INCIDENT_LOCK,))
+            keep, absorbed = ids[0], ids[1:]
+            conn.execute("UPDATE reports SET incident_id = %s WHERE incident_id = ANY(%s)",
+                         (keep, absorbed))
+            # If any of them was verified, the merged incident is verified.
+            conn.execute(
+                "UPDATE incidents SET status = 'verified' WHERE id = %s AND EXISTS ("
+                "SELECT 1 FROM incidents WHERE id = ANY(%s) AND status = 'verified')",
+                (keep, absorbed),
+            )
+            conn.execute("UPDATE incidents SET status = 'merged', merged_into = %s "
+                         "WHERE id = ANY(%s)", (keep, absorbed))
+            merge_needs(conn, keep, absorbed)
+            summary = {**refresh_incident(conn, keep), "absorbed": absorbed}
+            conn.execute("INSERT INTO event_log (kind, ward, payload) "
+                         "VALUES ('incident.merged', %s, %s)", (summary["ward"], json.dumps(summary)))
+            merged.append(summary)
+    if merged:
+        log.info("merged %d incident clusters", len(merged))
+    return merged
 
 
 def attach_report(conn: Connection, report_id: int) -> int:
