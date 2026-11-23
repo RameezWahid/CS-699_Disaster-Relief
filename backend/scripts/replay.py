@@ -8,8 +8,8 @@ Message text comes from the replay-only templates (scripts.messages), never the 
 classifier trained on. Ground truth rides in each inbox payload under "truth" (the pipeline
 ignores it) and is written to results/<scenario id>/truth.json. --reset needs the table owner.
 
-Rain and the simulated clock are written only when their tables exist, so a replay also runs on
-a database that has just the inbox, incidents and matching tables.
+The simulated clock is written only when its table exists, so a replay also runs on a database
+that has just the inbox, incidents and matching tables.
 """
 
 import json
@@ -33,7 +33,9 @@ SEED = 7
 REPORT_SPREAD_MIN = 40
 # A GPS pin lands within about 60 m of the true spot (phone accuracy in a dense city).
 GPS_JITTER_DEG = 0.0005
-RESET_TABLES = ["allocations", "needs", "offers", "reports", "incidents", "inbox", "rain_hourly"]
+RESET_TABLES = ["allocations", "needs", "offers", "reports", "incidents", "inbox", "alerts"]
+# A replayed offer stays available this long after it appears.
+OFFER_HOURS = 12
 
 log = logging.getLogger("replay")
 
@@ -119,21 +121,15 @@ def has_table(conn: psycopg.Connection, name: str) -> bool:
     return conn.execute("SELECT to_regclass(%s) IS NOT NULL", (name,)).fetchone()[0]
 
 
-def store_rain(conn: psycopg.Connection, rows: list[dict]) -> None:
-    conn.cursor().executemany(
-        "INSERT INTO rain_hourly (point_id, hour, mm) VALUES (%(point_id)s, %(hour)s, %(mm)s) "
-        "ON CONFLICT (point_id, hour) DO UPDATE SET mm = EXCLUDED.mm",
-        rows,
-    )
-
-
 def insert_offer(conn: psycopg.Connection, data: dict) -> None:
     place = data["place"]
     conn.execute(
         """
-        INSERT INTO offers (kind, provider, qty_total, qty_available, geom, ward, verified)
+        INSERT INTO offers (kind, provider, qty_total, qty_available, geom, ward, verified,
+                            available_from, available_until, synthetic)
         SELECT %(kind)s, %(provider)s, %(qty)s, %(qty)s, pt,
-               (SELECT code FROM wards WHERE ST_Contains(geom, pt) LIMIT 1), %(verified)s
+               (SELECT code FROM wards WHERE ST_Contains(geom, pt) LIMIT 1), %(verified)s,
+               app_now(), app_now() + make_interval(hours => %(hours)s), true
           FROM ST_SetSRID(ST_MakePoint(%(lon)s, %(lat)s), 4326) AS pt
         """,
         {
@@ -143,6 +139,7 @@ def insert_offer(conn: psycopg.Connection, data: dict) -> None:
             "lon": place["lon"],
             "lat": place["lat"],
             "verified": data.get("verified", False),
+            "hours": OFFER_HOURS,
         },
     )
 
@@ -171,9 +168,6 @@ def run(path: Path, speed: float, reset: bool) -> None:
             tables = ", ".join(t for t in RESET_TABLES if has_table(conn, t))
             conn.execute(f"TRUNCATE {tables} RESTART IDENTITY CASCADE")
         events = build_events(gazetteer_lookup(conn), scenario, run_id)
-        rain_fixture = scenario.get("context", {}).get("rain_fixture")
-        if rain_fixture and has_table(conn, "rain_hourly"):
-            store_rain(conn, json.loads((REPO_DIR / rain_fixture).read_text())["rows"])
         if has_table(conn, "sim_clock"):
             conn.execute("DELETE FROM sim_clock")
             conn.execute(
