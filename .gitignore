@@ -17,5 +17,5 @@ data/uploads/
 # Docker install script
 get-docker.sh
 
-# Offline basemap (large, generated with pmtiles extract)
-data/tiles/
+# demo.sh tunnel state
+.demo/

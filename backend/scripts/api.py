@@ -129,7 +129,8 @@ def set_incident_status(incident_id: int, body: StatusChange, user: User) -> dic
         log_event(conn, f"incident.{body.status}", ward, {"incident_id": incident_id, "by": user["username"]})
         if body.status == "verified": rematch(conn)
     return {"status": body.status}
-# ---------------------------------------------------------------- offers and proposals
+
+
 class NewOffer(BaseModel):  # without a window an offer is available from now, for a week
     kind: Literal[tuple(OFFER_KINDS)]  # type: ignore[valid-type]
     provider: str; qty: int = Field(gt=0); lat: float; lon: float
@@ -197,7 +198,8 @@ def decide(allocation_id: int, action: Literal[tuple(TRANSITIONS)], user: User) 
                       or fail(409, f"cannot {action} this allocation in its current state"))
         log_event(conn, f"allocation.{new_status}", ward, {"allocation_id": allocation_id, "by": user["username"]})
     return {"ok": True}
-# ---------------------------------------------------------------- official alerts (they raise credibility)
+
+
 class NewAlert(BaseModel):
     title: str = Field(min_length=3, max_length=200); ward: str | None = None; starts_at: datetime; ends_at: datetime
 @app.get("/api/alerts")
@@ -222,9 +224,8 @@ def end_alert(alert_id: int, user: User) -> dict:
         conn.execute("UPDATE alerts SET ends_at = app_now() WHERE id = %s AND ends_at > app_now()", (alert_id,))
         log_event(conn, "alert.ended", ward, {"alert_id": alert_id, "by": user["username"]})
     return {"alert_id": alert_id}
-# ---------------------------------------------------------------- responder app (offline)
-# Tasks are the accepted or dispatched allocations in the responder's wards. The phone queues actions offline and
-# sends them in one batch. Each is applied at most once (by client_action_id); a task changed meanwhile is rejected.
+
+
 @app.get("/api/tasks")
 def tasks(user: User) -> list[dict]:
     return rows(f"""SELECT a.id, a.status, a.qty, n.kind, o.provider, i.id AS incident_id, i.category, i.ward,
@@ -298,9 +299,7 @@ async def events(request: Request) -> StreamingResponse:
                 if not [n async for n in conn.notifies(timeout=SSE_KEEPALIVE_S, stop_after=1)]: yield ": keepalive\n\n"
     return StreamingResponse(stream(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
-# TODO(admin): GET /api/admin/dead-letters and POST .../{id}/retry for messages the worker gave up on (now: SQL).
-# TODO(health): GET /api/health for an uptime check.
-# TODO(audit): a script that re-walks event_log and reports the first broken hash link.
+
 # ---------------------------------------------------------------- command line
 def add_user(argv: list[str]) -> None:  # running it again for the same user resets the password, role, and wards
     if len(argv) < 3 or argv[0] != "adduser" or argv[2] not in ("responder", "coordinator", "admin"): raise SystemExit(__doc__)
